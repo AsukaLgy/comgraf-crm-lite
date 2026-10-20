@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy import select, or_, func, case as sql_case, and_, not_, literal
 from sqlalchemy.orm import aliased
 from .models import Attachment, Case, Client, Delivery, Draft, Event, Item, Ledger, MailAttachment, MailMessage, Production, Quote, Task, User, now
-from .security import can
+from .security import cached_permissions, can
 from .config import settings
 from .schemas import STAGE_LABELS
 
@@ -483,13 +483,14 @@ def cases_list(db, user, filters, *, paginated=True):
 
 
 def case_counts(db, user):
-    views = ['pool', 'action', 'mine', 'mine-action', 'production', 'ready', 'history', 'finalized']
-    if can(db, user, 'finance') or can(db, user, 'attention'):
-        views += ['balances', 'overdue', 'refunds', 'cancellation-review']
-    result = {view: db.scalar(select(func.count()).select_from(case_query(db, user, {'view': view}).order_by(None).subquery())) or 0 for view in views}
-    result['production_orders'] = orders_count(db, user, 'production')
-    result['ready_orders'] = orders_count(db, user, 'ready')
-    return result
+    with cached_permissions(db, user):
+        views = ['pool', 'action', 'mine', 'mine-action', 'production', 'ready', 'history', 'finalized']
+        if can(db, user, 'finance') or can(db, user, 'attention'):
+            views += ['balances', 'overdue', 'refunds', 'cancellation-review']
+        result = {view: db.scalar(select(func.count()).select_from(case_query(db, user, {'view': view}).order_by(None).subquery())) or 0 for view in views}
+        result['production_orders'] = orders_count(db, user, 'production')
+        result['ready_orders'] = orders_count(db, user, 'ready')
+        return result
 
 
 def _order_query(db, user, view, filters=None):

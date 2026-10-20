@@ -1,5 +1,6 @@
 import hashlib
 import secrets
+from contextlib import contextmanager
 from fastapi import Depends, HTTPException, Request
 from pwdlib import PasswordHash
 from sqlalchemy import select
@@ -18,6 +19,7 @@ DEFAULT_ROLES = {
     'Escáner de encuadernación': ['binding_scan'],
 }
 PERMISSIONS = sorted({p for values in DEFAULT_ROLES.values() for p in values})
+_PERMISSION_CACHE_KEY = '_comgraf_permission_snapshot'
 
 
 def digest(token):
@@ -25,7 +27,27 @@ def digest(token):
 
 
 def permissions(db, user):
+    snapshot = db.info.get(_PERMISSION_CACHE_KEY)
+    identity = (user.id, tuple(user.roles or ()))
+    if snapshot and snapshot[0] == identity:
+        return snapshot[1]
     return {p for role in db.scalars(select(Role).where(Role.name.in_(user.roles))) for p in role.permissions}
+
+
+@contextmanager
+def cached_permissions(db, user):
+    """Reuse a user's role lookup during one read-only aggregate operation."""
+    identity = (user.id, tuple(user.roles or ()))
+    previous = db.info.get(_PERMISSION_CACHE_KEY)
+    available = permissions(db, user)
+    db.info[_PERMISSION_CACHE_KEY] = (identity, available)
+    try:
+        yield available
+    finally:
+        if previous is None:
+            db.info.pop(_PERMISSION_CACHE_KEY, None)
+        else:
+            db.info[_PERMISSION_CACHE_KEY] = previous
 
 
 def can(db, user, permission):

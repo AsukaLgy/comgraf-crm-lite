@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import uuid
 from fastapi.testclient import TestClient
-from sqlalchemy import select, func
+from sqlalchemy import select, func, event as sqlalchemy_event
 from app.main import app
 from app.db import engine, SessionLocal
 from app.config import settings
@@ -572,6 +572,19 @@ def test_server_pagination_is_stable_and_counts_match_filters(clients):
     assert first['total']==second['total']==third['total']==must(api.get('/api/counts'))['action']==5
     assert ids==sorted(ids,reverse=True)
     assert must(api.get('/api/cases',params={'view':'pool','page_size':2}))['total']==must(api.get('/api/counts'))['pool']==5
+
+
+def test_counts_load_role_permissions_once(clients):
+    role_lookups=[]
+    def record_role_lookup(conn, cursor, statement, parameters, context, executemany):
+        if 'from roles' in statement.lower():
+            role_lookups.append(1)
+    sqlalchemy_event.listen(engine, 'before_cursor_execute', record_role_lookup)
+    try:
+        must(clients['admin'].get('/api/counts'))
+    finally:
+        sqlalchemy_event.remove(engine, 'before_cursor_execute', record_role_lookup)
+    assert len(role_lookups)==1
 
 
 def test_client_contact_relations_and_new_hnl_contract(clients):

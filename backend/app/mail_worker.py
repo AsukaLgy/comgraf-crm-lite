@@ -8,8 +8,9 @@ from .config import settings
 from .db import SessionLocal, engine
 from .mail_service import process_outbox_message, process_sent_copy, recover_stuck_outbox, sync_account
 from .models import MailAccount, MailMessage, MailWorkerTask, now
+from .logging_config import configure_file_logging
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s %(message)s')
+configure_file_logging('mail-worker')
 logger = logging.getLogger(__name__)
 LOCKS = {'inbox': 'comgraf-mail-inbox', 'outbox': 'comgraf-mail-outbox', 'sent_copy': 'comgraf-mail-copy'}
 

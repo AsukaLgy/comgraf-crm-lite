@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, OperationalError
+from anyio import to_thread
 from .config import settings
 from .db import engine, SessionLocal
 from .routers import auth, clients, cases, production, reports, scanner, mail
@@ -30,6 +31,7 @@ async def attention_recovery_loop():
 
 @asynccontextmanager
 async def lifespan(_app):
+    to_thread.current_default_thread_limiter().total_tokens = settings.web_thread_limit
     task = asyncio.create_task(attention_recovery_loop())
     try:
         yield

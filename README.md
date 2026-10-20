@@ -2,6 +2,12 @@
 
 CRM local para imprenta: una solicitud desde atención hasta producción, entrega y cobranza. Dentro de cada solicitud se genera su orden de producción. React/JavaScript, FastAPI, SQLAlchemy, Alembic y **MySQL real**. Interfaz en español, sin Frappe, Bench, CDN ni servicios cloud obligatorios.
 
+## Perfil experimental para el NAS de pocos recursos
+
+La rama `experiment/lan-low-resource` incluye un perfil Docker separado, MySQL 8.4 en Debian 12 x86-64-baseline, inventario de hardware y pruebas aisladas. Sigue [docs/LAN_LIGERO.md](docs/LAN_LIGERO.md); no lo uses con la base ni los secretos de otra instalación. La compatibilidad real con el Core 2 Duo debe verificarse en el NAS.
+
+Los resultados medidos en el equipo de desarrollo y sus limitaciones están en [docs/LAN_LIGERO_RESULTADOS.md](docs/LAN_LIGERO_RESULTADOS.md).
+
 ## Ejecución en este equipo Windows
 
 Se dejó el código en `C:\Users\asuka\Desktop\CRM`, las dependencias instaladas, la interfaz compilada y MySQL portátil en `.runtime` escuchando únicamente en `127.0.0.1:3307`. La base real `comgraf` está separada de `comgraf_test`; los datos ficticios y las credenciales de pruebas nunca se insertan en la base real.
