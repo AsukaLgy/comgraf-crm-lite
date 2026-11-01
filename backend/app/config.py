@@ -24,19 +24,6 @@ class Settings(BaseSettings):
     session_hours: int = 12
     product_version: str = '1.4.0'
     build_id: str = 'local-1.4.0'
-    mail_encryption_key_file: str = '../.runtime/mail-secrets/fernet.key'
-    mail_sync_interval_seconds: int = 60
-    mail_connect_timeout_seconds: int = 10
-    mail_outbox_poll_seconds: int = 2
-    mail_copy_poll_seconds: int = 3
-    mail_worker_stale_seconds: int = 300
-    mail_worker_enabled: bool = True
-    mail_channel_enabled: bool = True
-    whatsapp_channel_enabled: bool = True
-
-    @property
-    def public_channels(self):
-        return {'mail': self.mail_channel_enabled, 'whatsapp': self.whatsapp_channel_enabled}
 
     @property
     def database_url(self):

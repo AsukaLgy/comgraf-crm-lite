@@ -36,7 +36,8 @@ def create(data: s.CaseInput, user=Depends(current_user), db=Depends(get_db, sco
     case = Case(**data.model_dump())
     db.add(case)
     db.flush()
-    service.event(db, case, user, f'Solicitud de {case.kind.lower()} creada por {case.channel}', data={'action': 'created'})
+    label = 'orden de producción' if case.kind == 'Solicitud' else case.kind.lower()
+    service.event(db, case, user, f'Solicitud de {label} creada', data={'action': 'created'})
     return case_response(db, user, case)
 
 
@@ -154,7 +155,7 @@ def draft(case_id: int, channel: str, data: s.DraftInput, user=Depends(current_u
     require(db, user, 'attention')
     case = get_case(db, user, case_id, lock=True)
     if case.lifecycle == 'Completado': raise HTTPException(409, 'Reactiva la solicitud antes de guardar borradores nuevos')
-    if channel not in ('Nota', 'Llamada', 'Visita', 'Correo', 'WhatsApp'): raise HTTPException(422, 'Canal no reconocido')
+    if channel != 'Nota': raise HTTPException(422, 'Solo se pueden guardar borradores de notas')
     draft = db.scalar(select(Draft).where(Draft.case_id == case_id, Draft.user_id == user.id, Draft.channel == channel))
     if draft and draft.version != data.version: raise HTTPException(409, 'El borrador cambió en otra sesión')
     if not draft:
@@ -162,10 +163,6 @@ def draft(case_id: int, channel: str, data: s.DraftInput, user=Depends(current_u
         draft = Draft(case_id=case_id, user_id=user.id, channel=channel, version=0)
         db.add(draft)
     draft.body = data.body
-    draft.email_to = data.email_to
-    draft.email_subject = data.email_subject
-    draft.email_attachment_ids = data.email_attachment_ids
-    draft.email_thread_root = data.email_thread_root
     draft.version += 1
     db.flush()
     return row(draft)

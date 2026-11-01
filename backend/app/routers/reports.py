@@ -7,14 +7,8 @@ from ..models import Case, Client, Item, Production, Task, Event, Quote, Deliver
 from ..security import current_user, require
 from ..repository import visibility, balance, row, delivery_status, local_day
 from ..schemas import STAGE_LABELS
-from ..integrations import provider_status
 
 router = APIRouter(prefix='/api', tags=['Calendario e indicadores'])
-
-
-@router.get('/channels')
-def channels(user=Depends(current_user)):
-    return provider_status()
 
 
 @router.get('/calendar')

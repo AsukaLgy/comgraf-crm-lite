@@ -26,45 +26,6 @@ def event(db, case, user, body, kind='Sistema', channel='Sistema', data=None):
     case.updated_at = now()
 
 
-def attach_incoming_mail(db, case, message, body, actor=None, *, event_kind='Correo entrante', event_data=None,
-                         reopen_origin='incoming_email', reopen_body='Atención abierta automáticamente por correo entrante'):
-    """Apply the shared attention and history rules for an imported or classified message."""
-    message.case_id = case.id
-    if not message.thread_root:
-        message.thread_root = message.message_id or message.in_reply_to
-    if case.lifecycle == 'Completado':
-        message.status = 'Pendiente de clasificación'
-        return False
-    message.status = 'Vinculado'
-    case.pending_message = True
-    if case.status == 'Cerrado':
-        previous = case.status
-        case.status = 'Abierto'
-        case.closed_at = None
-        event(db, case, actor, reopen_body, data={
-            'action': 'attention_status', 'from': previous, 'to': 'Abierto', 'origin': reopen_origin,
-        })
-    data = {
-        'direction': 'Entrante', 'email_message_id': message.id, 'message_id': message.message_id,
-        'thread_root': message.thread_root,
-    }
-    data.update(event_data or {})
-    event(db, case, actor, body, kind=event_kind, channel='Correo', data=data)
-    case.version += 1
-    return True
-
-
-def create_incoming_email_case(db, client, message, subject, description, event_body):
-    """Create the standard open, unassigned attention case for a newly classified sender."""
-    case = Case(client_id=client.id, subject=(subject or 'Consulta recibida por correo')[:240],
-        description=(description or '')[:5000], kind='Consulta', channel='Correo', owner_id=None,
-        status='Abierto', mode='Atención', pending_message=True, lifecycle='Activo')
-    db.add(case)
-    db.flush()
-    attach_incoming_mail(db, case, message, event_body, event_data={'automatic': True})
-    return case
-
-
 def finalize_case(db, case, actor_id, *, origin, action_trigger, regularization_run=None):
     """Persist one lifecycle transition and its audit event for every completion path."""
     if case.lifecycle != 'Activo':
@@ -197,8 +158,6 @@ def update_case(db, user, case_id, data):
     if not changed: return case
     old = case.status
     if old != 'Cerrado' and data.status == 'Cerrado':
-        if case.pending_message:
-            fail('Registra la respuesta a la comunicación entrante antes de cerrar atención', 409)
         if db.scalar(select(Task.id).where(Task.case_id == case_id, Task.done_at.is_(None), Task.due_at <= now()).limit(1)):
             fail('Resuelve o reprograma los seguimientos vencidos antes de cerrar atención', 409)
         case.closed_at = now()
@@ -257,32 +216,7 @@ def reactivate_case(db, user, case_id, data):
 def add_event(db, user, case_id, data):
     case, changed = mutation(db, user, case_id, data, 'event', 'attention')
     if not changed: return case
-    if data.kind == 'Nota interna' and (data.channel != 'Nota' or data.direction != 'Interna'):
-        fail('Una nota interna solo puede guardarse en el canal Nota')
-    if data.kind == 'Interacción manual' and data.channel == 'Nota': fail('Selecciona el canal de la interacción')
     event(db, case, user, data.body, data.kind, data.channel, {'direction': data.direction, 'manual': True})
-    if data.kind == 'Interacción manual':
-        if data.direction == 'Entrante':
-            case.pending_message = True
-            if case.status == 'Cerrado':
-                old = case.status
-                case.status = 'Abierto'
-                event(db, case, user, 'Atención abierta automáticamente por una interacción entrante', data={'action': 'attention_status', 'from': old, 'to': 'Abierto', 'origin': 'automatic'})
-        if data.direction == 'Saliente':
-            # A manual reply can resolve a manual inbound interaction, but it
-            # cannot silently mark an imported email as handled.
-            from .models import MailMessage
-            from sqlalchemy import select
-            unhandled_email = db.scalar(select(MailMessage.id).where(
-                MailMessage.case_id == case.id, MailMessage.direction == 'Entrante',
-                MailMessage.status == 'Vinculado', MailMessage.attended_at.is_(None),
-            ).limit(1))
-            if not unhandled_email:
-                case.pending_message = False
-        if data.direction == 'Saliente' and case.first_response_at is None:
-            case.first_response_at = now()
-        if data.direction == 'Saliente':
-            complete_resolved_production(db, case, user, 'incoming_message_handled')
     return case
 
 

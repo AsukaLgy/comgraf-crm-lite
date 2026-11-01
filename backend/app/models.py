@@ -74,8 +74,8 @@ class Case(Base):
     related_case_id = Column(ForeignKey('cases.id'))
     subject = Column(String(240), nullable=False)
     description = Column(Text, nullable=False, default='')
-    kind = Column(String(30), nullable=False, default='Consulta')
-    channel = Column(String(30), nullable=False, default='Presencial')
+    kind = Column(String(30), nullable=False)
+    channel = Column(String(30), nullable=True)
     owner_id = Column(ForeignKey('users.id'), index=True)
     # Legacy area-specific owner retained for historical visibility; new work uses owner_id only.
     collection_owner_id = Column(ForeignKey('users.id'))

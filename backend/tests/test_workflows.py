@@ -22,7 +22,7 @@ def must(response, status=200):
 
 def create(client, subject='Consulta presencial'):
     customer = must(client.post('/api/clients', json={'name':'María Álvarez', 'company':'Gráfica Norte', 'rtn':'08011990001234', 'phones':['+504 9999-1234'], 'emails':['maria@example.test']}), 201)
-    case = must(client.post('/api/cases', json={'client_id':customer['id'], 'subject':subject}), 201)
+    case = must(client.post('/api/cases', json={'client_id':customer['id'], 'subject':subject, 'kind':'Cotización'}), 201)
     return customer, case
 
 
@@ -233,16 +233,13 @@ def test_attention_history_search_and_drafts(clients):
     c=mutate(api,c,'take')
     c=mutate(api,c,'events',{'kind':'Nota interna','channel':'Nota','body':'Consulta de precios sin fabricación'})
     assert c['first_response_at'] is None
-    c=mutate(api,c,'events',{'kind':'Interacción manual','channel':'WhatsApp','direction':'Saliente','body':'Atendimos la consulta presencial'})
-    assert c['first_response_at']
-    for channel in ['Nota','Correo','WhatsApp']:
-        must(api.put(f'/api/cases/{original}/drafts/{channel}',json={'body':f'Borrador {channel}','version':0}))
+    must(api.put(f'/api/cases/{original}/drafts/Nota',json={'body':'Borrador Nota','version':0}))
     c=mutate(api,c,'tasks',{'title':'Confirmar información','owner_id':c['owner_id'],'due_at':(datetime.now(timezone.utc)-timedelta(hours=1)).isoformat()})
     assert must(api.get('/api/cases?view=action'))['total']==1
     c=mutate(api,c,f'tasks/{c["tasks"][0]["id"]}/complete')
     c=mutate(api,c,'attention',{'status':'Cerrado'})
     assert c['mode']=='Atención' and c['production'] is None
-    assert len(c['drafts'])==3
+    assert len(c['drafts'])==1
     for term in ['maria alvarez','0801199000123','50499991234','maria@example.test',c['number']]:
         result=must(api.get('/api/cases',params={'view':'all','q':term}))
         assert result['total']==1
@@ -258,27 +255,22 @@ def test_attention_history_search_and_drafts(clients):
     assert must(api.get(f'/api/cases/{original}'))['status']=='Cerrado'
 
 
-def test_attention_can_open_and_close_without_reason_and_incoming_reopens(clients):
+def test_attention_can_open_and_close_without_reason_and_legacy_message_flag_does_not_block(clients):
     api=clients['admin'];_,c=create(api,'Atención independiente del trabajo')
     c=mutate(api,c,'take')
-    c=mutate(api,c,'events',{'kind':'Interacción manual','channel':'WhatsApp','direction':'Entrante','body':'Incoming message before closure'})
-    assert c['pending_message'] is True
-    must(api.post(f'/api/cases/{c["id"]}/attention',json={'version':c['version'],'key':key(),'status':'Cerrado'}),409)
+    with SessionLocal.begin() as db:
+        db.get(Case,c['id']).pending_message = True
+    c=must(api.get(f'/api/cases/{c["id"]}'))
     assert must(api.get('/api/cases?view=action'))['total']==1
-    c=mutate(api,c,'events',{'kind':'Interacción manual','channel':'WhatsApp','direction':'Saliente','body':'Respuesta al mensaje entrante'})
-    assert c['pending_message'] is False
     c=mutate(api,c,'attention',{'status':'Cerrado'})
-    assert c['status']=='Cerrado' and c['production'] is None and c['close_reason'] is None and c['pending_message'] is False
+    assert c['status']=='Cerrado' and c['production'] is None and c['close_reason'] is None and c['pending_message'] is True
     assert must(api.get('/api/cases?view=action'))['total']==0
     c=mutate(api,c,'events',{'kind':'Nota interna','channel':'Nota','body':'Nota guardada después del cierre'})
     assert c['status']=='Cerrado' and must(api.get('/api/cases?view=action'))['total']==0
     c=mutate(api,c,'attention',{'status':'Abierto'})
     assert c['status']=='Abierto' and must(api.get('/api/cases?view=action'))['total']==1
     c=mutate(api,c,'attention',{'status':'Cerrado'})
-    c=mutate(api,c,'events',{'kind':'Interacción manual','channel':'WhatsApp','direction':'Entrante','body':'Nueva consulta entrante'})
-    assert c['status']=='Abierto' and c['pending_message']
-    automated=[e for e in c['events'] if e['data'].get('action')=='attention_status' and e['data'].get('origin')=='automatic']
-    assert len(automated)==1
+    assert c['status']=='Cerrado' and c['pending_message'] is True
 
 
 def test_unassigned_pool_ignores_filters_and_take_persists_in_personal_views(clients,accounts):
@@ -593,7 +585,7 @@ def test_client_contact_relations_and_new_hnl_contract(clients):
     other=must(api.post('/api/clients',json={'name':'Otro cliente'}),201)
     contact=must(api.post(f'/api/clients/{customer["id"]}/contacts',json={'name':'Contacto comercial','phone':'9999'}),201)
     assert must(api.get(f'/api/clients/{customer["id"]}/contacts'))==[contact]
-    assert api.post('/api/cases',json={'client_id':other['id'],'contact_id':contact['id'],'subject':'Relación incorrecta'}).status_code==422
+    assert api.post('/api/cases',json={'client_id':other['id'],'contact_id':contact['id'],'subject':'Relación incorrecta','kind':'Cotización'}).status_code==422
     c=mutate(api,c,'take')
     quote_body={'version':c['version'],'key':key(),'items':[item()],'currency':'USD','valid_until':str(today()+timedelta(days=10))}
     assert api.post(f'/api/cases/{c["id"]}/quotes',json=quote_body).status_code==422
@@ -733,7 +725,7 @@ def test_permissions_files_csrf_and_cancellation(clients,accounts):
     assert 'balance' not in printer and 'price' not in printer['production'] and printer['ledger']==[]
     mutate(clients['printer'],c,'payments',{'amount':'5','reference':'No permitido'},403)
     mutate(clients['cashier'],c,'production/stage',{'stage':'APPROVAL'},403)
-    mutate(clients['agent'],c,'events',{'kind':'Nota interna','channel':'WhatsApp','body':'No enviar nota'},403)
+    mutate(clients['agent'],c,'events',{'kind':'Nota interna','channel':'Nota','body':'Sin permiso para modificar'},403)
     mutate(api,c,'events',{'kind':'Nota interna','channel':'WhatsApp','body':'No enviar nota'},422)
     bad=api.post(f'/api/cases/{c["id"]}/attachments',files={'file':('evil.pdf',b'<script>bad</script>','application/pdf')})
     assert bad.status_code==422

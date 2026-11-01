@@ -62,17 +62,13 @@ Las capacidades de roles salvo Administrador son configurables. Varios roles acu
 
 Contraseñas Argon2id. Sesiones aleatorias, almacenadas como SHA256, cookie HttpOnly/SameSite Strict, revocables al salir o cambiar contraseña. Cada petición mutadora exige cabecera propia y origen coincidente; no se habilita CORS. Adjuntos identificados por UUID, descargados con autenticación, sin ruta pública. PDF/PNG/JPEG/TXT con límite, extensión y firma/UTF-8 comprobadas; no hay antivirus integrado.
 
-## Correo Yahoo
+## Historial de comunicaciones
 
-El correo empresarial usa IMAP SSL/TLS en Yahoo para leer INBOX y SMTP SSL/TLS para enviar. `mail_accounts` conserva la contraseña solo cifrada con Fernet; su clave vive fuera de MySQL en `.runtime/mail-secrets/` o en el volumen Compose `mail_secrets`. Los respaldos deben incluir MySQL, adjuntos y una copia protegida de esa clave. `mail_sync_cursors` conserva UIDVALIDITY/UID por cuenta y carpeta; el trabajador adquiere `GET_LOCK` de MySQL antes de sincronizar o procesar salidas. La bandeja de salida persiste estados y claves idempotentes; un resultado incierto nunca se reenvía automáticamente. La aceptación SMTP no equivale a entrega ni lectura.
+Las tablas `mail_accounts`, `mail_messages`, `mail_attachments` y los borradores históricos permanecen para consulta y respaldo. Los mensajes vinculados a una solicitud aparecen como historial de solo lectura; los adjuntos exigen permiso de lectura del expediente. No hay trabajador, conexión a Yahoo, envío ni reintento. Los estados pendientes conservan su valor original. La clave Fernet histórica permanece fuera de MySQL y se incluye en los respaldos, aunque el arranque ya no la utiliza.
 
 ## Indicadores
 
 La pantalla explica sus denominadores: conversión de solicitudes a órdenes de producción sobre todas las solicitudes; aceptación sobre versiones; cotizaciones convertidas sobre versiones aceptadas; puntualidad sobre entregas completas contra compromiso original. Tiempo de primera respuesta cuenta primera interacción manual saliente o visita, no nota interna ni asignación. Tiempo por etapa incluye permanencia y bloqueos; tiempo bloqueado también se reporta aparte. El indicador Reclamos conserva el conteo de retrocesos de producción registrados con motivo.
-
-## Canales futuros
-
-`integrations.py` define contrato de proveedor y bandeja con unicidad proveedor/ID externo. Los eventos ambiguos permanecen sin clasificar; ningún teléfono determina automáticamente una asociación. No se exponen webhooks ni se habilitan envíos. Una integración futura necesita verificación de firma, asociación manual, permisos, pruebas y gestión de credenciales antes de activarse.
 
 ## Bandejas y vencimientos
 
@@ -82,12 +78,12 @@ No se implementó WebSocket, sincronización sin conexión, multitenencia, fisca
 
 ## Ciclo de vida y recogida
 
-El estado de atencion y el ciclo de vida son independientes. Un caso puede seguir Activo con atencion Cerrada; Completar caso es una accion manual y atomica, y solo procede cuando no quedan trabajos sin entregar, saldos, devoluciones, revisiones de anulacion, tareas abiertas ni interacciones entrantes pendientes. El servidor devuelve los pendientes concretos y no los resuelve por su cuenta. Reactivar conserva produccion, pagos, entregas y eventos anteriores. Los registros previos quedan Activos en la migracion 007, sin archivado por inferencia.
+El estado de atención y el ciclo de vida son independientes. Un caso puede seguir Activo con atención Cerrada; Completar caso es una acción manual y atómica, y solo procede cuando no quedan trabajos sin entregar, saldos, devoluciones, revisiones de anulación ni tareas abiertas. El indicador histórico `pending_message` ya no bloquea esta acción porque no existe una operación de mensajería para resolverlo. El servidor devuelve los pendientes concretos y no los resuelve por su cuenta. Reactivar conserva producción, pagos, entregas y eventos anteriores. Los registros previos quedan Activos en la migración 007, sin archivado por inferencia.
 
 El paso de Encuadernación a Listo para entregar requiere confirmación del escáner para todas las órdenes todavía pendientes de habilitar en la solicitud. La confirmación queda asociada a la orden, ciclo, usuario y fecha del servidor. Una excepción autorizada libera solo la orden indicada y guarda solicitante, autorizador y justificación. La ruta de etapa ordinaria no puede saltarse ese control. Órdenes históricas que ya estaban listas conservan su etapa sin escaneos retroactivos. Al liberar se crea una única tarea PICKUP a siete días por orden, asignada al propietario principal si existe. La tarea se puede reprogramar; al resolver un contacto se puede crear el siguiente recordatorio semanal. Entrega parcial mantiene la tarea y la entrega completa resuelve solo las tareas PICKUP. La situación de pago se calcula desde el ledger y nunca se deduce del escaneo, de Contado ni del tiempo que lleva sin recogerse.
 
 Cada OP tiene un UUID de QR estable, que no es una credencial. El QR contiene solo el prefijo `CGOP1:` y ese UUID; consultar y confirmar requiere sesión del rol exclusivo. La terminal no reutiliza el endpoint de detalle del expediente y no devuelve importes, notas ni datos de cobro. Un reclamo que retrocede una orden invalida la confirmación y aumenta su ciclo; la confirmación anterior permanece en la bitácora.
 
-Las notas, incluidos los resumenes de llamada o visita, son internas. Correo y WhatsApp permanecen sin configurar; su interfaz no envia mensajes. Las comunicaciones manuales historicas de llamada y visita siguen visibles. La conversion registra referencias estructuradas de OP y la version exacta COT; la interfaz enlaza ambas dentro del mismo caso y aplica sus permisos.
+Las notas, incluidos los resúmenes de llamada o visita, son internas. La mensajería se retiró; las comunicaciones históricas siguen visibles sin acciones de envío. La conversión registra referencias estructuradas de OP y la versión exacta COT; la interfaz enlaza ambas dentro del mismo caso y aplica sus permisos.
 
 El contrato HTTP vigente es la versión 4 y el producto 1.4.0. La migración 009 agrega UUID de escaneo por orden, ciclos de confirmación y solicitudes auditables de excepción. Actualiza la interfaz y aplica Alembic antes de habilitar el escáner.

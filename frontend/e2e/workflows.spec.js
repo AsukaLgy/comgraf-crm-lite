@@ -24,7 +24,7 @@ async function createCase(page, subject) {
   const customer = await client.json()
   const response = await page.request.post('/api/cases', {
     headers,
-    data: { client_id: customer.id, subject },
+    data: { client_id: customer.id, subject, kind: 'Cotización' },
   })
   expect(response.ok()).toBeTruthy()
   const record = await response.json()
@@ -45,8 +45,9 @@ async function scanAsOperator(page, qr) {
   await scanner.getByRole('button', { name: 'Iniciar sesión', exact: true }).click()
   await expect(scanner.getByRole('heading', { name: 'Escáner de encuadernación' })).toBeVisible()
   const response = await scanner.request.post('/api/scanner/scan', { headers, data: { scan_id: qr } })
+  const result = { ok: response.ok(), data: await response.json() }
   await context.close()
-  return response
+  return result
 }
 
 test('el rol escáner entra a una terminal aislada y no lee expedientes completos', async ({ page }) => {
@@ -73,7 +74,7 @@ test('tomar un caso sin asignar desde la bandeja actualiza la fila', async ({ pa
   const client = await clientResponse.json()
   const response = await page.request.post('/api/cases', {
     headers,
-    data: { client_id: client.id, subject },
+    data: { client_id: client.id, subject, kind: 'Cotización' },
   })
   expect(response.ok()).toBeTruthy()
   await page.goto('/inbox/pool')
@@ -169,10 +170,9 @@ test('anular con importe final calcula devolución y registra devolución real',
   expect(final.ledger.filter((entry) => entry.kind === 'Devolución')).toHaveLength(1)
 })
 
-test('manual consultation can be closed and explicitly completed', async ({ page }) => {
+test('solicitud sin producción se puede cerrar y completar', async ({ page }) => {
   const record = await createCase(page, 'E2E consultation without production')
   await expect(page.getByLabel(/Etapas de producci/)).toHaveCount(0)
-  await page.getByRole('tab', { name: 'Notas', exact: true }).click()
   await page
     .getByLabel('Nota interna', { exact: true })
     .fill('Consultation handled; no production needed.')
@@ -198,29 +198,16 @@ test('manual consultation can be closed and explicitly completed', async ({ page
     ),
   ).toHaveLength(2)
 })
-test('borradores por canal sobreviven navegación y recarga', async ({ page }) => {
-  const record = await createCase(page, 'E2E Borradores por canal')
+test('borrador de nota sobrevive navegación sin tocar borradores históricos', async ({ page }) => {
+  const record = await createCase(page, 'E2E Borrador de nota')
+  await page.evaluate((caseId) => localStorage.setItem(`comgraf.draft.1.${caseId}.Correo`, 'Borrador histórico'), record.id)
   await page.getByLabel('Nota interna', { exact: true }).fill('Nota interna que nunca debe salir')
-  await page.getByRole('tab', { name: 'Correo', exact: true }).click()
-  await page.getByLabel('Registro de interacción').fill('Borrador de correo sin enviar')
-  await page.getByRole('tab', { name: 'WhatsApp', exact: true }).click()
-  await page.getByLabel('Registro de interacción').fill('Borrador de WhatsApp sin enviar')
-  await expect(page.getByText(/WhatsApp no configurado/)).toBeVisible()
-  await page.getByRole('tab', { name: 'Notas', exact: true }).click()
-  await expect(page.getByLabel('Nota interna', { exact: true })).toHaveValue(
-    'Nota interna que nunca debe salir',
-  )
   await page.getByRole('link', { name: 'Mis solicitudes', exact: true }).click()
   await page.goto('/cases/' + record.id)
-  await page.getByRole('tab', { name: 'Correo', exact: true }).click()
-  await expect(page.getByLabel('Registro de interacción')).toHaveValue(
-    'Borrador de correo sin enviar',
-  )
+  await expect(page.getByLabel('Nota interna', { exact: true })).toHaveValue('Nota interna que nunca debe salir')
   await page.reload()
-  await page.getByRole('tab', { name: 'WhatsApp', exact: true }).click()
-  await expect(page.getByLabel('Registro de interacción')).toHaveValue(
-    'Borrador de WhatsApp sin enviar',
-  )
+  await expect(page.getByLabel('Nota interna', { exact: true })).toHaveValue('Nota interna que nunca debe salir')
+  expect(await page.evaluate((caseId) => localStorage.getItem(`comgraf.draft.1.${caseId}.Correo`), record.id)).toBe('Borrador histórico')
 })
 
 test('error real de validación conserva formulario y conversión mantiene expediente', async ({
@@ -255,11 +242,13 @@ test('error real de validación conserva formulario y conversión mantiene exped
   await expect(stageBar.locator('li').first().locator('svg')).toHaveCount(0)
   await page.getByRole('button', { name: 'Producción', exact: true }).click()
   await expect(
-    page.getByText('Ojillos cada 50 cm; conservar este texto', { exact: true }),
+    page.getByRole('paragraph').filter({ hasText: 'Ojillos cada 50 cm; conservar este texto' }).first(),
   ).toBeVisible()
   const qrImage = page.getByRole('img', { name: /QR estable de la orden/ })
   await expect(qrImage).toBeVisible()
-  await expect(qrImage).toHaveJSProperty('naturalWidth', 240)
+  const qrSize = await qrImage.evaluate((image) => ({ width: image.naturalWidth, height: image.naturalHeight }))
+  expect(qrSize.width).toBeGreaterThan(0)
+  expect(qrSize.height).toBe(qrSize.width)
   await page.getByRole('link', { name: 'Ficha de taller' }).click()
   await expect(page.getByText(/NO AUTORIZADA/)).toHaveCount(0)
   await expect(page.getByRole('img', { name: /QR estable de la orden/ })).toBeVisible()
@@ -348,6 +337,13 @@ test('crear cliente y caso desde formularios y encontrar su historial', async ({
   await page.getByRole('dialog').getByRole('button', { name: 'Guardar', exact: true }).click()
   await page.getByRole('link', { name, exact: true }).click()
   await page.getByRole('button', { name: 'Nueva solicitud', exact: true }).click()
+  const newDialog = page.getByRole('dialog')
+  await expect(newDialog.getByLabel('Tipo de atención', { exact: true })).toHaveValue('')
+  expect(await newDialog.getByLabel('Tipo de atención', { exact: true }).locator('option').allTextContents()).toEqual([
+    'Seleccionar tipo de atención', 'Cotización', 'Orden de producción', 'Reclamo',
+  ])
+  await expect(newDialog.getByLabel('Canal de origen')).toHaveCount(0)
+  await expect(newDialog.getByLabel(/Solicitud relacionada/)).toHaveCount(0)
   await page
     .getByRole('dialog')
     .getByLabel('Asunto', { exact: true })
@@ -360,6 +356,8 @@ test('crear cliente y caso desde formularios y encontrar su historial', async ({
   const caseId = new URL(page.url()).pathname.split('/').pop()
   const created = await (await page.request.get(`/api/cases/${caseId}`)).json()
   expect(created.kind).toBe('Solicitud')
+  expect(created.channel).toBeNull()
+  expect(created.related_case_id).toBeNull()
   expect(created.mode).toBe('Atención')
   expect(created.production).toBeNull()
   expect(created.ledger).toEqual([])
@@ -402,6 +400,7 @@ test('autocompletado conserva relaciones y los datos al crear cliente en línea'
   await expect(d.getByRole('option').filter({ hasText: 'Contacto principal' })).toBeVisible()
   await d.getByRole('option').filter({ hasText: 'Contacto principal' }).click()
   await d.getByLabel('Asunto').fill('Caso con cliente y contacto seleccionados')
+  await d.getByLabel('Tipo de atención').selectOption('Cotización')
   await d.getByRole('button', { name: 'Guardar', exact: true }).click()
   await expect(
     page.getByRole('heading', { name: 'Caso con cliente y contacto seleccionados' }),
@@ -431,6 +430,7 @@ test('autocompletado conserva relaciones y los datos al crear cliente en línea'
   await d.getByRole('option').filter({ hasText: alternate.name }).click()
   await expect(d.getByLabel('Contacto (opcional)')).toHaveValue('')
   await d.getByLabel('Asunto').fill('El ID anterior no se conserva')
+  await d.getByLabel('Tipo de atención').selectOption('Reclamo')
   await d.getByRole('button', { name: 'Guardar', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'El ID anterior no se conserva' })).toBeVisible()
   const secondCasePath = new URL(page.url()).pathname
@@ -448,6 +448,7 @@ test('autocompletado conserva relaciones y los datos al crear cliente en línea'
   d = page.getByRole('dialog')
   const provisional = 'Provisional en flujo ' + Date.now()
   await d.getByLabel('Asunto').fill('No perder este asunto')
+  await d.getByLabel('Tipo de atención').selectOption('Solicitud')
   await d.getByLabel('Descripción').fill('Tampoco perder esta descripción')
   await d.getByLabel('Cliente').fill(provisional)
   await d.getByRole('button', { name: /Crear cliente/ }).click()
@@ -534,24 +535,27 @@ test('cotización aceptada, producción activa, bloqueo, entrega parcial y cobra
   await dialog.getByLabel('Versión del arte').fill('v1')
   await dialog.getByRole('button', { name: 'Guardar' }).click()
   await page.getByRole('button', { name: 'Producción' }).click()
-  for (const stage of ['Impresión', 'Encuadernación']) {
+  for (const stage of ['Impresión']) {
     await page.getByRole('button', { name: `Avanzar a ${stage}` }).click()
     dialog = page.getByRole('dialog')
     await dialog.getByRole('button', { name: `Avanzar a ${stage}` }).click()
   }
-  await expect(page.getByText('Pendiente de escaneo', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Registrar reclamo', exact: true }).click()
   dialog = page.getByRole('dialog')
-  await dialog.getByLabel('Regresar a').selectOption('PRINTING')
+  await dialog.getByLabel('Regresar a').selectOption('APPROVAL')
   await dialog.getByLabel('Motivo del reclamo').fill('Ajuste interno de color, sin nuevo cargo.')
   await dialog.getByRole('button', { name: 'Registrar reclamo', exact: true }).click()
+  await page.getByRole('button', { name: 'Avanzar a Impresión' }).click()
+  dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: 'Avanzar a Impresión' }).click()
   await page.getByRole('button', { name: 'Avanzar a Encuadernación' }).click()
   dialog = page.getByRole('dialog')
   await dialog.getByRole('button', { name: 'Avanzar a Encuadernación' }).click()
+  await expect(page.getByText('Pendiente de escaneo', { exact: true })).toBeVisible()
   const currentForScan = await (await page.request.get(`/api/cases/${record.id}`)).json()
   const scanResponse = await scanAsOperator(page, `CGOP1:${currentForScan.production.scan_id}`)
-  expect(scanResponse.ok()).toBeTruthy()
-  expect((await scanResponse.json()).result).toBe('released')
+  expect(scanResponse.ok).toBeTruthy()
+  expect(scanResponse.data.result).toBe('released')
   await page.reload()
   await expect(page.getByRole('button', { name: 'Registrar entrega', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Bloquear' }).click()

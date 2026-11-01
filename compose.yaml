@@ -25,7 +25,6 @@ services:
       DB_PORT: 3306
       UPLOAD_DIR: /data/uploads
       STATIC_DIR: /app/frontend/dist
-      MAIL_ENCRYPTION_KEY_FILE: /data/mail-secrets/fernet.key
     volumes:
       - uploads:/data/uploads
       - mail_secrets:/data/mail-secrets

@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from anyio import to_thread
 from .config import settings
 from .db import engine, SessionLocal
-from .routers import auth, clients, cases, production, reports, scanner, mail
+from .routers import auth, clients, cases, production, reports, scanner, history
 from .services import reopen_overdue_attention
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ app = FastAPI(title='Comgraf · HTTP interno', docs_url=None, redoc_url=None, li
 
 def error_code(status, detail):
     message = str(detail).lower()
-    if 'temporalmente deshabilitada' in message: return 'CHANNEL_DISABLED'
+    if status == 410: return 'FEATURE_RETIRED'
     if 'bloqueo' in message or 'bloqueado' in message: return 'PRODUCTION_BLOCKED'
     if 'contrato' in message or 'interfaz' in message: return 'CLIENT_CONTRACT_MISMATCH'
     if status == 403: return 'PERMISSION_DENIED'
@@ -91,9 +91,6 @@ async def http_error(request: Request, error: HTTPException):
 @app.exception_handler(RequestValidationError)
 async def validation_error(request: Request, error: RequestValidationError):
     details = error.errors()
-    for item in details:
-        if 'application_password' in item.get('loc', ()):
-            item.pop('input', None)
     return JSONResponse({'detail': details, 'code': 'FIELD_VALIDATION'}, status_code=422)
 
 
@@ -107,7 +104,7 @@ async def unavailable(request, error):
     return JSONResponse({'detail': 'La base de datos no está disponible o hubo un conflicto transaccional. Conserva el formulario y reintenta.'}, 503)
 
 
-for router in (auth.router, clients.router, cases.router, production.router, reports.router, scanner.router, mail.router):
+for router in (auth.router, clients.router, cases.router, production.router, reports.router, scanner.router, history.router):
     app.include_router(router)
 
 

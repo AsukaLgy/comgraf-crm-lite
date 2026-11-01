@@ -1,5 +1,7 @@
 # Pausa de canales en la beta ligera
 
+> Documento histórico del commit `9619b4f`. La versión actual retiró la mensajería y no admite su reactivación por configuración. Para actualizar una instalación existente, usa [RETIRADA_MENSAJERIA.md](RETIRADA_MENSAJERIA.md). No apliques los pasos de reactivación de este documento a la versión nueva.
+
 Esta actualización conserva MySQL, adjuntos, borradores, mensajes, claves, cuentas, historial, Caddy y los límites del perfil ligero. No añade migraciones ni cambia versiones de Python, MySQL o Caddy. `MAIL_CHANNEL_ENABLED=false` impide conexiones, pruebas, sincronización y envíos de correo desde HTTP, transporte y trabajador; `MAIL_WORKER_ENABLED=false` detiene el proceso. Los correos ya vinculados a una solicitud pueden marcarse como atendidos localmente para no bloquear su cierre. `WHATSAPP_CHANNEL_ENABLED=false` oculta su borrador y registro manual en la interfaz, sin alterar el canal de origen de solicitudes ni interacciones existentes. Los envíos pendientes quedan en su estado actual. **Revisa cada envío pendiente y los resultados inciertos antes de reactivar el trabajador**, para evitar envíos tardíos o duplicados.
 
 Los siguientes pasos se preparan para `/opt/comgraf-beta/lite`. No se ejecutan automáticamente. Sustituye `USUARIO@SERVIDOR` por la cuenta SSH y usa un directorio de respaldo con espacio suficiente y acceso restringido. El archivo `.runtime/low-resource/.env` existente se conserva.

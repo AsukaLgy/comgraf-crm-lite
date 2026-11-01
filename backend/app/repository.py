@@ -130,7 +130,7 @@ def attention_predicates():
     delivered_balance = has_debt
     refund_pending = has_credit
     cancellation_review = select(Production.case_id).where(Production.case_id == Case.id, Production.cancelled_at.is_not(None), Production.cancellation_review_pending.is_(True)).correlate(Case).exists()
-    requires_action = and_(Case.lifecycle == 'Activo', or_(Case.owner_id.is_(None), Case.status == 'Abierto', Case.pending_message.is_(True), overdue_task))
+    requires_action = and_(Case.lifecycle == 'Activo', or_(Case.owner_id.is_(None), Case.status == 'Abierto', overdue_task))
     pending_assignment = or_(requires_action, and_(active_production, not_(complete_delivery)), pending_task, delivered_balance, refund_pending, cancellation_review)
     return {
         'overdue_task': overdue_task,
@@ -192,7 +192,7 @@ def case_summary(db, user, case):
     result['production_pending_count'] = sum(not p.cancelled_at and delivery_status(db, case.id, p.id) != 'Completa' for p in productions)
     result['delivery_status'] = delivery_status(db, case.id, production.id) if production else 'Pendiente'
     result['requires_action'] = case.lifecycle == 'Activo' and (
-        case.owner_id is None or case.status == 'Abierto' or case.pending_message
+        case.owner_id is None or case.status == 'Abierto'
         or bool(db.scalar(select(Task.id).where(Task.case_id == case.id, Task.done_at.is_(None), Task.due_at <= now()).limit(1)))
     )
     result['attention_status_label'] = case.status
@@ -332,8 +332,6 @@ def case_completion_blockers(db, case, *, show_finances=True):
     open_tasks = db.scalars(select(Task).where(Task.case_id == case.id, Task.done_at.is_(None)).order_by(Task.due_at, Task.id)).all()
     for task in open_tasks:
         blockers.append(f"Hay un seguimiento pendiente para el {task.due_at.date().isoformat()}: {task.title}.")
-    if case.pending_message:
-        blockers.append('Hay una comunicación entrante pendiente de atender.')
     open_quotes = db.scalars(select(Quote).where(Quote.case_id == case.id, Quote.status == 'Pendiente').order_by(Quote.version)).all()
     if open_quotes:
         for quote in open_quotes:

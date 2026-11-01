@@ -45,7 +45,7 @@ def main():
             db.add(client)
             db.flush()
             case = Case(client_id=client.id, subject=f'DEMO LAN-TEST solicitud operativa {index}',
-                        owner_id=user.id, priority='Normal', kind='Consulta')
+                        owner_id=user.id, priority='Normal', kind='Cotización')
             db.add(case)
             db.flush()
             credentials['users'].append({'username': user.username, 'password': password,

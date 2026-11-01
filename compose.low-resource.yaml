@@ -56,13 +56,6 @@ services:
       COOKIE_SECURE: 'true'
       UPLOAD_DIR: /data/uploads
       STATIC_DIR: /app/frontend/dist
-      MAIL_ENCRYPTION_KEY_FILE: /data/mail-secrets/fernet.key
-      MAIL_WORKER_ENABLED: 'false'
-      MAIL_CHANNEL_ENABLED: 'false'
-      WHATSAPP_CHANNEL_ENABLED: 'false'
-      MAIL_SYNC_INTERVAL_SECONDS: 60
-      MAIL_OUTBOX_POLL_SECONDS: 5
-      MAIL_COPY_POLL_SECONDS: 10
       ACCESS_LOG: 'false'
       BUILD_ID: lan-light-experiment
       TEST_MYSQL_DATABASE: ${MYSQL_DATABASE:?}

@@ -15,14 +15,14 @@ Esta guía indica dónde cambiar cada comportamiento y qué invariantes debe con
 | Alta y selección de cliente | `frontend/src/NewCase.jsx` | Nuevo caso, autocompletado y creación explícita de cliente/contacto. |
 | Coordinación del expediente | `frontend/src/CasePage.jsx` | Carga, mutaciones y composición del expediente. Mantenerlo como coordinador y no concentrar presentación de todos los dominios aquí. |
 | Atención y encabezado | `frontend/src/CaseAttention.jsx` | Abrir/cerrar atención, propietario e información de acción pendiente. |
-| Actividad | `frontend/src/CaseActivity.jsx` | Canales manuales y bitácora. Las notas no abren atención; interacciones entrantes sí. |
+| Actividad | `frontend/src/CaseActivity.jsx` | Bitácora, notas e historial de comunicaciones en solo lectura. Las notas no abren atención. |
 | Etapas | `frontend/src/ProductionStages.jsx` | Barra de cinco etapas, clasificación histórica, programación, bloqueos y retrocesos. |
 | Entrega y finanzas | `frontend/src/DeliveryFinance.jsx` | Registro parcial/completo y abono transaccional opcional, saldos y permisos financieros. |
 | Anulación comercial | `frontend/src/CasePage.jsx`, `DeliveryFinance.jsx`; `backend/app/services.py`, `repository.py` | Detener producción conservando entregas y movimientos; ajustar cargo final, resolver devoluciones o dejar revisión financiera pendiente. |
 | Ficha imprimible | `frontend/src/CasePrintSheet.jsx` | Salida de taller y especificaciones del expediente. |
 | Productos y conversión | `frontend/src/ProductForm.jsx` | Partidas, especificaciones, cotizaciones y ampliación del mismo caso a producción. |
-| Correo Yahoo | `frontend/src/Settings.jsx`, `MailInbox.jsx`, `Composer.jsx`; `backend/app/routers/mail.py`, `mail_transport.py`, `mail_service.py`, `mail_security.py`, `mail_worker.py`, `mail_recovery.py` | Configuración cifrada, asociación de hilos, salida SMTP, recepción IMAP, resultados persistentes por UID, atención explícita y recuperación acotada. |
-| Comunicación manual | `frontend/src/Composer.jsx` | Notas y WhatsApp manuales; las notas internas nunca pasan a la bandeja de salida del correo. |
+| Historial de correo | `frontend/src/CaseActivity.jsx`; `backend/app/routers/history.py`, `repository.py` | Lectura de mensajes y adjuntos vinculados, bajo los permisos de la solicitud. |
+| Notas | `frontend/src/Composer.jsx` | Borrador de Nota y plantillas; describe llamadas o visitas sin crear comunicaciones. |
 | Endpoints | `backend/app/routers/` | HTTP, permisos de entrada, dependencias de sesión y traducción a servicios. |
 | Respuesta del expediente | `backend/app/routers/common.py` | Proyección común posterior a una mutación; evita que un router importe otro. |
 | Contratos | `backend/app/schemas.py` | Validación Pydantic. Rechaza campos extra y normaliza entradas. |
@@ -50,10 +50,7 @@ Esta guía indica dónde cambiar cada comportamiento y qué invariantes debe con
 - Las órdenes anuladas antes de la resolución comercial quedan para revisión por migración. No se les añade un ajuste ni se cambia el saldo automáticamente.
 - La autorización del servidor es obligatoria aunque la interfaz oculte una acción. Las reglas críticas no se duplican solo como validación React.
 - Al calcular saldos, no reinterpretar condiciones históricas de pago ni cambiar importes o vencimientos sin una acción auditada y una decisión comercial.
-- El trabajador de correo tiene tareas independientes `inbox`, `outbox` y `sent_copy`; cada una usa un `GET_LOCK` MySQL distinto. La salud del proceso (latido) no demuestra conectividad Yahoo. La recepción solo avanza después de guardar un resultado terminal o una fila recuperable/revisable en `mail_sync_outcomes`.
-- No borres ni reinicies `mail_sync_cursors` para corregir un correo ausente. Usa `python -m app.mail_recovery --start-uid N --end-uid M` para una vista previa de un rango de hasta 100 UID; revisa el estado, la fecha y el tamaño, y aplica solo UID elegidos con `--apply --uids ...`. La herramienta vuelve a validar UIDVALIDITY, toma el bloqueo de recepción y deduplica antes de importar.
-- El estado `Aceptado por Yahoo` es independiente de `sent_copy_status`. Reintentar una copia en Enviados nunca llama SMTP. Un envío con resultado incierto requiere revisión explícita y no se reenvía automáticamente.
-- Los correos entrantes vinculados mantienen `attended_at` hasta que el usuario atiende los IDs seleccionados en la solicitud. No derives su atención de una respuesta saliente posterior ni de su hora de aceptación.
+- Las tablas, borradores, mensajes, cuentas y adjuntos históricos de correo permanecen intactos. No se ejecuta ningún trabajador ni ruta de envío. El campo histórico `pending_message` no bloquea ya el cierre ni define acción de bandeja; las tareas, órdenes y saldos conservan sus reglas.
 
 ## Cómo cambiar una operación
 
@@ -104,6 +101,6 @@ Para E2E, seguir el procedimiento de `README.md`: sembrar credenciales aleatoria
 
 Las tareas de recogida usan `Task.category == PICKUP`; el vencimiento inicial es siete dias despues de entrar a READY. No crees una segunda tarea abierta al reintentar o volver a guardar READY. Una entrega completa resuelve unicamente tareas PICKUP. Al registrar contacto se puede marcar la tarea y, explicitamente, programar el siguiente control semanal.
 
-`frontend/src/Composer.jsx` conserva borradores antiguos de llamada/visita, pero ofrece como canales activos Notas, Correo y WhatsApp. Las plantillas solo escriben texto editable; no registran pagos, entregas, aprobaciones ni seguimientos. Las referencias estructuradas de conversion se muestran en `CaseActivity.jsx`; conserva sus permisos y el destino dentro del expediente.
+`frontend/src/Composer.jsx` lee y guarda solo el borrador de Nota; no toca borradores históricos de otros canales. Las plantillas solo escriben texto editable; no registran pagos, entregas, aprobaciones ni seguimientos. Las referencias estructuradas de conversión se muestran en `CaseActivity.jsx`; conserva sus permisos y el destino dentro del expediente.
 
 La migracion `007_case_completion_pickup` agrega ciclo de vida y tipo de tarea sin completar casos historicos. Aplicala con `alembic upgrade head`; no edites revisiones ya aplicadas. No reviertas automaticamente esta revision porque las tareas PICKUP y cambios de nulabilidad pueden contener actividad real.

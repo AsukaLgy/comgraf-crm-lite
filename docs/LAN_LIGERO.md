@@ -88,7 +88,7 @@ scripts/low-resource-compose.sh up -d --no-build
 scripts/low-resource-compose.sh ps
 ```
 
-Antes de `up`, `start`, `restart`, `run` o `create`, el wrapper valida que existan los directorios y que la base esté en almacenamiento local; solo la ruta `--test-mode` permite una prueba en el disco raíz. `stop`, `logs`, `ps` y `down` siguen disponibles aunque el disco de base esté desconectado para poder detener y diagnosticar el perfil. La aplicación ejecuta las migraciones Alembic. El perfil pausa correo y WhatsApp con `MAIL_CHANNEL_ENABLED=false` y `WHATSAPP_CHANNEL_ENABLED=false`; además deja `MAIL_WORKER_ENABLED=false`. La pausa del canal y la del trabajador son independientes. Para la actualización de una instalación existente y una eventual reactivación, sigue [ACTUALIZACION_CANALES_BETA.md](ACTUALIZACION_CANALES_BETA.md). Crea el administrador experimental de forma interactiva:
+Antes de `up`, `start`, `restart`, `run` o `create`, el wrapper valida que existan los directorios y que la base esté en almacenamiento local; solo la ruta `--test-mode` permite una prueba en el disco raíz. `stop`, `logs`, `ps` y `down` siguen disponibles aunque el disco de base esté desconectado para poder detener y diagnosticar el perfil. La aplicación ejecuta las migraciones Alembic. La mensajería ya no forma parte del servicio; ninguna variable antigua la reactiva. Para actualizar una instalación existente, sigue [RETIRADA_MENSAJERIA.md](RETIRADA_MENSAJERIA.md). Crea el administrador experimental de forma interactiva:
 
 ```sh
 scripts/low-resource-compose.sh exec app python -m app.cli create-admin
@@ -169,7 +169,7 @@ chmod 600 /ruta/de/respaldo/comgraf-lan-light/runtime.env
 scripts/low-resource-compose.sh start app
 ```
 
-Guarda el respaldo fuera del NAS; `runtime.env`, `mail-secrets/fernet.key` y los respaldos SQL contienen credenciales o claves. El respaldo necesita la DB, adjuntos y clave Fernet para conservar futuras cuentas de correo. Aunque el correo esté apagado durante esta prueba, preserva esa carpeta. Para restaurar en un NAS de prueba con directorios MySQL vacíos:
+Guarda el respaldo fuera del NAS; `runtime.env`, `mail-secrets/fernet.key` y los respaldos SQL contienen credenciales o claves. El respaldo necesita la DB, adjuntos y clave Fernet histórica para conservar los datos anteriores. Preserva esa carpeta aunque esta versión no use correo. Para restaurar en un NAS de prueba con directorios MySQL vacíos:
 
 ```sh
 # Copia runtime.env a .runtime/low-resource/.env (modo 0600); ajusta solo

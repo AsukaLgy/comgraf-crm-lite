@@ -6,15 +6,12 @@ import { ErrorBox, Field, FormDialog, Select } from './components'
 import { CASE_PRIORITIES } from './domain'
 
 const CASE_KINDS = [
-  'Consulta',
   'Cotización',
   { value: 'Solicitud', label: 'Orden de producción' },
   'Reclamo',
-  'Seguimiento',
 ]
-const ORIGIN_CHANNELS = ['Presencial', 'Llamada', 'Correo', 'WhatsApp', 'Otro']
 
-export default function NewCase({ onClose, clientId, client: initialClient, relatedId, user }) {
+export default function NewCase({ onClose, clientId, client: initialClient, user }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const prefill = initialClient || null
@@ -32,15 +29,14 @@ export default function NewCase({ onClose, clientId, client: initialClient, rela
       initial={{
         client_id: clientId || '',
         contact_id: '',
-        related_case_id: relatedId || '',
         subject: '',
         description: '',
-        kind: 'Consulta',
-        channel: 'Presencial',
+        kind: '',
         priority: 'Normal',
       }}
       onSave={async (values) => {
         if (!values.client_id) throw new Error('Selecciona o crea un cliente antes de guardar.')
+        if (!values.kind) throw new Error('Selecciona un tipo de atención antes de guardar.')
 
         const record = await api('/cases', {
           method: 'POST',
@@ -48,11 +44,9 @@ export default function NewCase({ onClose, clientId, client: initialClient, rela
             subject: values.subject,
             description: values.description,
             kind: values.kind,
-            channel: values.channel,
             priority: values.priority,
             client_id: Number(values.client_id),
             contact_id: values.contact_id ? Number(values.contact_id) : null,
-            related_case_id: values.related_case_id ? Number(values.related_case_id) : null,
           },
         })
 
@@ -90,27 +84,16 @@ export default function NewCase({ onClose, clientId, client: initialClient, rela
             <Select
               label="Tipo de atención"
               options={CASE_KINDS}
+              empty="Seleccionar tipo de atención"
+              required
               value={values.kind}
               onChange={(event) => setValue('kind', event.target.value)}
-            />
-            <Select
-              label="Canal de origen"
-              options={ORIGIN_CHANNELS}
-              value={values.channel}
-              onChange={(event) => setValue('channel', event.target.value)}
             />
             <Select
               label="Prioridad"
               options={CASE_PRIORITIES}
               value={values.priority}
               onChange={(event) => setValue('priority', event.target.value)}
-            />
-            <Field
-              label="Solicitud relacionada (ID opcional)"
-              type="number"
-              min="1"
-              value={values.related_case_id}
-              onChange={(event) => setValue('related_case_id', event.target.value)}
             />
             <Field label="Descripción" className="full">
               <textarea

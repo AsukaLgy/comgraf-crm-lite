@@ -36,8 +36,8 @@ export default function CaseAttention({
           <div className="case-meta">
             <span>{record.client.name}</span>
             <span>· Responsable: {person(record.owner_id)}</span>
-            <span>· {record.kind}</span>
-            <span>· {record.channel}</span>
+            <span>· {record.kind === 'Solicitud' ? 'Orden de producción' : record.kind}</span>
+            {record.channel && <span>· {record.channel}</span>}
             <span>· {date(record.created_at)}</span>
           </div>
         </div>

@@ -24,7 +24,7 @@ with SessionLocal.begin() as db:
         client = Client(name=name, company=name, search_text=normalize(name), phones=['+504 2222-0000'])
         db.add(client)
         db.flush()
-        db.add(Case(client_id=client.id, subject=subject, priority=priority, kind='Consulta'))
+        db.add(Case(client_id=client.id, subject=subject, priority=priority, kind='Cotización'))
     credentials = {'username':user.username,'password':password,'user_id':user.id,
         'scanner_username':scanner.username,'scanner_password':scanner_password,'scanner_user_id':scanner.id}
 Path('../.runtime/e2e.json').write_text(json.dumps(credentials), encoding='utf-8')

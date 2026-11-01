@@ -40,7 +40,7 @@ def main():
             if db.scalar(select(Client.id).limit(1)) or db.scalar(select(Case.id).limit(1)):
                 raise SystemExit('Demo permitida únicamente en una base sin clientes ni solicitudes. Usa una instalación separada.')
             if input('Escribe DEMOSTRACION para cargar datos ficticios: ') != 'DEMOSTRACION': raise SystemExit('Cancelado')
-            for name, subject, kind in [('DEMO · Café del Valle', 'Tarjetas para nueva sucursal', 'Cotización'), ('DEMO · Librería Aurora', 'Consulta sobre libretas A5', 'Consulta'), ('DEMO · Colegio Horizonte', 'Talonarios para matrícula', 'Solicitud')]:
+            for name, subject, kind in [('DEMO · Café del Valle', 'Tarjetas para nueva sucursal', 'Cotización'), ('DEMO · Librería Aurora', 'Libretas para sucursal', 'Cotización'), ('DEMO · Colegio Horizonte', 'Talonarios para matrícula', 'Solicitud')]:
                 client = Client(name=name, company=name, search_text=normalize(name), provisional=True)
                 db.add(client)
                 db.flush()

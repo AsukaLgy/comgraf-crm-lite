@@ -115,29 +115,11 @@ Para desarrollo de React, en otra terminal: `npm --prefix frontend run dev`. Vit
 
 Si se anula un trabajo, el usuario registra el motivo y elige **Sin cargo** o un **importe final acordado** (total definitivo del trabajo, no cargo adicional). El ajuste conserva obligación y pagos anteriores. Si el total pagado supera el importe final, queda saldo a favor; una devolución requiere que un usuario con permiso financiero confirme fecha/importe/referencia después de realizarla. Una persona que puede detener producción pero no ajustar cobros deja la resolución en la bandeja **Resolución de anulación**. Las órdenes históricas anuladas también requieren revisión explícita.
 
-En **Configuración → Correo de la empresa**, un administrador conecta Yahoo con la dirección y una contraseña de aplicación. Comgraf comprueba IMAP y SMTP por separado. El trabajador consulta INBOX aproximadamente cada minuto, importa solo los mensajes posteriores a la activación y no marca, mueve ni borra los mensajes de Yahoo. Los correos nuevos se vinculan por hilo o remitente inequívoco; los casos ambiguos y las respuestas a solicitudes completadas esperan clasificación manual.
+Las solicitudes nuevas exigen elegir **Cotización**, **Orden de producción** o **Reclamo**. La opción de orden conserva el valor interno `Solicitud` y no crea una OP por sí sola. El canal de origen queda sin dato y las relaciones históricas permanecen. Las solicitudes antiguas de Consulta y Seguimiento siguen disponibles y se pueden gestionar normalmente.
 
-Desde una solicitud se pueden guardar borradores, elegir destinatario y adjuntos del expediente, y enviar correo. El CRM muestra estados de cola, aceptación SMTP, error o resultado incierto. “Aceptado por Yahoo” no significa entregado ni leído. Los reintentos con resultado incierto requieren revisar el buzón y confirmarlos manualmente. WhatsApp sigue siendo manual. Los borradores se guardan por solicitud/canal/usuario en MySQL y el navegador conserva un respaldo provisional de la escritura.
+La bitácora permite guardar notas y plantillas para resumir llamadas, visitas o acuerdos externos. Los correos y registros manuales antiguos siguen visibles como historial de solo lectura, con sus adjuntos vinculados. Comgraf ya no envía, recibe, sincroniza ni reintenta comunicaciones. Los borradores anteriores y las cuentas cifradas permanecen en MySQL y no se modifican al guardar notas.
 
-Las migraciones aditivas `010_yahoo_mail`, `011_mail_retry_idempotency` y `013_mail_reliability` agregan configuración cifrada, progreso IMAP, mensajes, adjuntos, salida idempotente, resultados recuperables de cada UID, latidos y asistencia explícita de mensajes; no reconstruyen la base. `012_cai_order_snapshot` agrega la instantánea comercial de órdenes. Antes de actualizar, respalda MySQL y adjuntos. En Compose, `app.start` aplica las migraciones y supervisa un trabajador con tareas independientes para recepción IMAP, salida SMTP y copia en Enviados; bloqueos MySQL evitan tareas duplicadas aunque haya varios procesos web. La integración necesita una conexión saliente a Yahoo; el CRM local sigue abriendo si Internet no está disponible. La conexión real se valida al configurar el buzón desde la pantalla de administración.
-
-La cola SMTP se consulta cada 2 segundos y la copia de Enviados tiene su propio ciclo; una falla o espera IMAP no pausa esas tareas. INBOX se consulta aproximadamente cada minuto. En **Correos por clasificar** se ven mensajes sin asociación y UID que requieren reintento o revisión. Los reintentos de red SMTP son limitados y usan la contraseña guardada; un resultado incierto queda para revisión explícita. Un mensaje importado queda pendiente hasta que el usuario marque los mensajes concretos que atendió.
-
-Para investigar un rango acotado de UID que quizá se omitió, primero respalda la base y ejecuta una vista previa de hasta 100 UID, sin modificar el cursor ni importar el buzón completo:
-
-```sh
-docker compose exec app python -m app.mail_recovery --start-uid 424900 --end-uid 424914
-```
-
-Solo si la vista previa identifica mensajes posteriores al punto de activación que quieres recuperar, aplica los UID exactos mostrados:
-
-```sh
-docker compose exec app python -m app.mail_recovery --start-uid 424900 --end-uid 424914 --apply --uids 424913
-```
-
-La herramienta vuelve a comprobar UIDVALIDITY, deduplica por UID/Message-ID, toma el mismo bloqueo de la recepción normal y deja intactos mensajes anteriores a la activación. Sustituye el ejemplo por el rango y UID de la vista previa. Nunca uses `--apply` sin revisar primero el resultado.
-
-La migración `012_cai_order_snapshot` agrega a cada orden una referencia opcional al contacto y una instantánea de los datos comerciales usados al crearla. Las órdenes anteriores conservan sus datos; no se convierten talonarios históricos al producto CAI ni se inventan instantáneas retroactivas.
+Para actualizar el perfil ligero con respaldo y reversión, sigue [Retirada de mensajería](docs/RETIRADA_MENSAJERIA.md).
 
 ## Actualización
 
@@ -154,7 +136,7 @@ El actualizador comprueba la configuración, instala dependencias solo si cambia
 
 Las migraciones `005_commercial_cancellation` y `006_cancelled_stage_snapshot` agregan trazabilidad y marcan anulaciones existentes para revisión; no cambian pagos, saldos ni etapas sin clasificar, y no se editan después de aplicadas. Las anulaciones antiguas requieren revisión explícita; no se ponen en cero automáticamente.
 
-Con Docker, después del respaldo: `docker compose build app` y `docker compose up -d app`. El arranque aplica Alembic antes de servir solicitudes y supervisa el trabajador Yahoo, que separa recepción, envío y copia en Enviados. Comprueba `docker compose ps`, `/api/health`, login, expediente y descarga de archivo; en Configuración revisa el latido y último éxito de cada tarea. Para instalar cambios sin Docker, usa el script Windows indicado arriba o ejecuta manualmente los pasos de Desarrollo sin Docker. Crea revisiones Alembic nuevas; no edites migraciones aplicadas. `alembic check` detecta diferencias entre modelos y esquema.
+Con Docker, después del respaldo: `docker compose build app` y `docker compose up -d app`. El arranque aplica Alembic antes de servir solicitudes y no inicia procesos de correo. Comprueba `docker compose ps`, `/api/health`, login, expediente y descarga de archivo. Para instalar cambios sin Docker, usa el script Windows indicado arriba o ejecuta manualmente los pasos de Desarrollo sin Docker. Crea revisiones Alembic nuevas; no edites migraciones aplicadas. `alembic check` detecta diferencias entre modelos y esquema.
 
 ## Respaldo y restauración de Compose
 
@@ -164,7 +146,7 @@ python scripts/backup.py backup
 
 Detiene brevemente la aplicación para congelar altas de archivos, genera SQL con `mysqldump --single-transaction`, copia adjuntos, marca `COMPLETE` y reinicia la aplicación. Escribe SQL como bytes, sin tuberías de PowerShell que alteren codificación. Guarda `.env` por separado, protegido, junto con la versión de código correspondiente. Copia los respaldos fuera del disco del servidor.
 
-La contraseña Yahoo se cifra con una clave Fernet persistente que queda fuera de MySQL y Git. Para restaurar esos mensajes y poder descifrar la cuenta, respalda **también** la clave; el script SQL/adjuntos no la incluye. En Compose, cópiala con `docker compose cp --archive app:/data/mail-secrets/fernet.key /ruta/privada/fernet.key` y guárdala cifrada en un medio distinto al servidor. En la instalación local se encuentra en `.runtime/mail-secrets/fernet.key`. Restaura la clave en el mismo directorio antes de iniciar Comgraf con la base respaldada. No la regeneres ni la compartas junto a una copia accesible de la base.
+Las cuentas de correo históricas y su clave Fernet no se utilizan en esta versión, pero se conservan sin alteración. Respáldalas junto con MySQL y los adjuntos para no perder información histórica ni opciones de recuperación controlada. El script SQL/adjuntos no incluye la clave; en Compose, cópiala con `docker compose cp --archive app:/data/mail-secrets/fernet.key /ruta/privada/fernet.key` si existe y protégela por separado. En la instalación local se encuentra en `.runtime/mail-secrets/fernet.key` si se configuró una cuenta.
 
 Restauración explícita, **reemplaza los datos de la instalación**:
 
@@ -239,7 +221,7 @@ El comando vuelve a comprobar la elegibilidad dentro de la transacción, registr
 - [Referencias inspeccionadas y procedencia](docs/REFERENCIAS.md).
 - [Verificación y limitaciones reales](docs/VERIFICACION.md).
 
-Control operativo de cobros; no reemplaza contabilidad ni un sistema fiscal. Integra recepción y envío de correo Yahoo; WhatsApp permanece manual. No implementa SaaS, multitenencia ni API pública. No se ha publicado en Internet.
+Control operativo de cobros; no reemplaza contabilidad ni un sistema fiscal. No integra envío ni recepción de mensajería. No implementa SaaS, multitenencia ni API pública. No se ha publicado en Internet.
 
 Las migraciones se aplican en orden con `alembic upgrade head`; la migración 002 normaliza únicamente equivalencias inequívocas de Contado/Crédito y agrega la instantánea de especificaciones. No altera importes, saldos, pagos ni fechas históricas.
 
