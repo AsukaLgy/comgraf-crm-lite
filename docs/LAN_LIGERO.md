@@ -88,7 +88,7 @@ scripts/low-resource-compose.sh up -d --no-build
 scripts/low-resource-compose.sh ps
 ```
 
-Antes de `up`, `start`, `restart`, `run` o `create`, el wrapper valida que existan los directorios y que la base esté en almacenamiento local; solo la ruta `--test-mode` permite una prueba en el disco raíz. `stop`, `logs`, `ps` y `down` siguen disponibles aunque el disco de base esté desconectado para poder detener y diagnosticar el perfil. La aplicación ejecuta las migraciones Alembic. El trabajador de correo se supervisa solo cuando `MAIL_WORKER_ENABLED=true`; el perfil lo deja apagado. Para habilitar correo más adelante, configura una cuenta desde el CRM, cambia ese valor en el `.env` aislado y recrea solo `app` con `scripts/low-resource-compose.sh up -d --force-recreate app`. No copies credenciales de correo desde otra instalación. Crea el administrador experimental de forma interactiva:
+Antes de `up`, `start`, `restart`, `run` o `create`, el wrapper valida que existan los directorios y que la base esté en almacenamiento local; solo la ruta `--test-mode` permite una prueba en el disco raíz. `stop`, `logs`, `ps` y `down` siguen disponibles aunque el disco de base esté desconectado para poder detener y diagnosticar el perfil. La aplicación ejecuta las migraciones Alembic. El perfil pausa correo y WhatsApp con `MAIL_CHANNEL_ENABLED=false` y `WHATSAPP_CHANNEL_ENABLED=false`; además deja `MAIL_WORKER_ENABLED=false`. La pausa del canal y la del trabajador son independientes. Para la actualización de una instalación existente y una eventual reactivación, sigue [ACTUALIZACION_CANALES_BETA.md](ACTUALIZACION_CANALES_BETA.md). Crea el administrador experimental de forma interactiva:
 
 ```sh
 scripts/low-resource-compose.sh exec app python -m app.cli create-admin

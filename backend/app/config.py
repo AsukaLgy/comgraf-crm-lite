@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     mail_copy_poll_seconds: int = 3
     mail_worker_stale_seconds: int = 300
     mail_worker_enabled: bool = True
+    mail_channel_enabled: bool = True
+    whatsapp_channel_enabled: bool = True
+
+    @property
+    def public_channels(self):
+        return {'mail': self.mail_channel_enabled, 'whatsapp': self.whatsapp_channel_enabled}
 
     @property
     def database_url(self):

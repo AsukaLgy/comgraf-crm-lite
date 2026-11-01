@@ -46,6 +46,7 @@ app = FastAPI(title='Comgraf · HTTP interno', docs_url=None, redoc_url=None, li
 
 def error_code(status, detail):
     message = str(detail).lower()
+    if 'temporalmente deshabilitada' in message: return 'CHANNEL_DISABLED'
     if 'bloqueo' in message or 'bloqueado' in message: return 'PRODUCTION_BLOCKED'
     if 'contrato' in message or 'interfaz' in message: return 'CLIENT_CONTRACT_MISMATCH'
     if status == 403: return 'PERMISSION_DENIED'

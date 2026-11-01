@@ -38,6 +38,7 @@ const TEMPLATES = {
 
 export default function Composer({ record, user }) {
   const qc = useQueryClient()
+  const visibleChannels = CHANNELS.filter((name) => name === 'Nota' || (name === 'Correo' && user.channels?.mail) || (name === 'WhatsApp' && user.channels?.whatsapp))
   const emailDraft = record.drafts.find((draft) => draft.channel === 'Correo')
   const threadChoices = [...new Map((record.email_messages || []).filter((message) => message.thread_root).map((message) => [message.thread_root, message])).entries()]
   const defaultThread = threadChoices.at(-1)?.[0] || ''
@@ -69,11 +70,11 @@ export default function Composer({ record, user }) {
   const pendingEmailMessages = (record.email_messages || []).filter((message) =>
     message.direction === 'Entrante' && message.status === 'Vinculado' && !message.attended_at,
   )
-  const mailStatus = useQuery({ queryKey: ['mail-status'], queryFn: () => api('/mail/status'), enabled: channel === 'Correo', staleTime: 30000 })
+  const mailStatus = useQuery({ queryKey: ['mail-status'], queryFn: () => api('/mail/status'), enabled: user.channels?.mail === true && channel === 'Correo', staleTime: 30000 })
   const outbox = useQuery({
     queryKey: ['mail-outbox', outgoingId],
     queryFn: () => api(`/mail/outbox/${outgoingId}`),
-    enabled: Boolean(outgoingId),
+    enabled: user.channels?.mail === true && Boolean(outgoingId),
     refetchInterval: (query) => ['Pendiente', 'Enviando'].includes(query.state.data?.status)
       || (query.state.data?.status === 'Aceptado por Yahoo' && query.state.data?.sent_copy_status === 'Pendiente') ? 2000 : false,
   })
@@ -293,8 +294,8 @@ export default function Composer({ record, user }) {
         <span>{pendingEmailMessages.length} correo(s) entrante(s) siguen pendientes de atención.</span>
         <button type="button" disabled={busy} onClick={attendVisibleEmails}>Marcar estos correos como atendidos</button>
       </div>}
-      <div className="tabs" role="tablist" aria-label="Canal de comunicación">
-        {CHANNELS.map((name) => (
+      {visibleChannels.length > 1 && <div className="tabs" role="tablist" aria-label="Canal de comunicación">
+        {visibleChannels.map((name) => (
           <button
             role="tab"
             aria-selected={channel === name}
@@ -307,7 +308,7 @@ export default function Composer({ record, user }) {
             {name === 'Nota' ? 'Notas' : name}
           </button>
         ))}
-      </div>
+      </div>}
       {channel === 'WhatsApp' && (
         <div className="channel-status">
           WhatsApp no configurado · Guarda un borrador o registra una conversación realizada fuera

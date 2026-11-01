@@ -58,6 +58,8 @@ services:
       STATIC_DIR: /app/frontend/dist
       MAIL_ENCRYPTION_KEY_FILE: /data/mail-secrets/fernet.key
       MAIL_WORKER_ENABLED: 'false'
+      MAIL_CHANNEL_ENABLED: 'false'
+      WHATSAPP_CHANNEL_ENABLED: 'false'
       MAIL_SYNC_INTERVAL_SECONDS: 60
       MAIL_OUTBOX_POLL_SECONDS: 5
       MAIL_COPY_POLL_SECONDS: 10

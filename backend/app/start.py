@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 
 def main():
     configure_file_logging('comgraf')
-    logger.info('Iniciando Comgraf build=%s workers=%s mail_worker=%s', settings.build_id,
-                os.getenv('APP_WORKERS', '2'), settings.mail_worker_enabled)
+    logger.info('Iniciando Comgraf build=%s workers=%s mail_channel=%s mail_worker=%s', settings.build_id,
+                os.getenv('APP_WORKERS', '2'), settings.mail_channel_enabled, settings.mail_worker_enabled)
     subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], check=True)
     stop = threading.Event()
     worker_process = {'process': None}
@@ -40,7 +40,7 @@ def main():
             delay = min(delay * 2, 60)
 
     supervisor = None
-    if settings.mail_worker_enabled:
+    if settings.mail_channel_enabled and settings.mail_worker_enabled:
         supervisor = threading.Thread(target=supervise_worker, name='mail-worker-supervisor', daemon=True)
         supervisor.start()
     try:

@@ -126,7 +126,7 @@ export default function App() {
     [logoutError, setLogoutError] = useState(null)
   const me = useQuery({ queryKey: ['me'], queryFn: () => api('/auth/me'), retry: false })
   const serverVersion = useQuery({ queryKey: ['server-version'], queryFn: () => api('/version'), staleTime: 60000 })
-  const mailOverview = useQuery({ queryKey: ['mail-overview'], queryFn: () => api('/mail/overview'), enabled: can(me.data, 'attention') || can(me.data, '*'), refetchInterval: 15000, retry: false })
+  const mailOverview = useQuery({ queryKey: ['mail-overview'], queryFn: () => api('/mail/overview'), enabled: me.data?.channels?.mail === true && (can(me.data, 'attention') || can(me.data, '*')), refetchInterval: me.data?.channels?.mail ? 15000 : false, retry: false })
   useEffect(() => {
     if (me.data?.timezone) setTimezone(me.data.timezone)
   }, [me.data?.timezone])
@@ -145,7 +145,7 @@ export default function App() {
     ['/', 'Mi día', LayoutDashboard],
     ['/inbox/pool', 'Pool general', InboxIcon],
     ['/inbox/mine', 'Mis solicitudes', FolderOpen],
-    ...((can(user, 'attention') || can(user, '*')) ? [['/mail', 'Correos por clasificar', Mail]] : []),
+    ...(user.channels?.mail && (can(user, 'attention') || can(user, '*')) ? [['/mail', 'Correos por clasificar', Mail]] : []),
     ...(can(user, 'clients') ? [['/clients', 'Clientes', Users]] : []),
     ['/inbox/production', 'Producción', Printer],
     ['/inbox/ready', 'Entregas y cobros', Truck],
@@ -263,7 +263,7 @@ export default function App() {
               }
             />
             <Route path="/calendar" element={<Calendar />} />
-            <Route path="/mail" element={<Guard user={user} permission="attention"><MailInbox/></Guard>} />
+            <Route path="/mail" element={user.channels?.mail ? <Guard user={user} permission="attention"><MailInbox/></Guard> : <div className="notice"><h1>Correo pausado temporalmente</h1><p>Las solicitudes y su historial siguen disponibles.</p></div>} />
             <Route path="/binding-releases" element={<Guard user={user} permission="partial_release_approve"><PartialReleaseApprovals/></Guard>} />
             <Route
               path="/indicators"

@@ -84,4 +84,4 @@ def user_data(db, user):
     return {'id': user.id, 'username': user.username, 'name': user.name,
             'roles': user.roles, 'active': user.active, 'capacity': user.capacity,
             'permissions': sorted(permissions(db, user)),
-            'timezone': settings.app_timezone}
+            'timezone': settings.app_timezone, 'channels': settings.public_channels}

@@ -568,6 +568,8 @@ def _outgoing_mime(db, row, account, password):
 
 def process_outbox_message(SessionLocal, message_id):
     """Claim and send one committed row; IMAP copy runs in an independent worker."""
+    if not settings.mail_channel_enabled:
+        return
     with SessionLocal.begin() as db:
         row = db.scalar(select(MailMessage).where(MailMessage.id == message_id).with_for_update())
         if not row or row.direction != 'Saliente' or row.status != 'Pendiente':
@@ -686,6 +688,8 @@ def process_outbox_message(SessionLocal, message_id):
 
 def process_sent_copy(SessionLocal, message_id):
     """Process only a copy in Yahoo Sent; never calls SMTP."""
+    if not settings.mail_channel_enabled:
+        return
     with SessionLocal.begin() as db:
         row = db.scalar(select(MailMessage).where(MailMessage.id == message_id).with_for_update())
         if not row or row.direction != 'Saliente' or row.status != 'Aceptado por Yahoo' or row.sent_copy_status not in {'Pendiente', 'Error'}:
@@ -730,6 +734,8 @@ def process_sent_copy(SessionLocal, message_id):
 
 def retry_sent_copy(SessionLocal, message_id):
     """Queue only the Yahoo Sent-folder copy; this path does no network IO."""
+    if not settings.mail_channel_enabled:
+        raise MailFailure('channel_disabled')
     with SessionLocal.begin() as db:
         row = db.scalar(select(MailMessage).where(MailMessage.id == message_id).with_for_update())
         if not row or row.direction != 'Saliente' or row.status != 'Aceptado por Yahoo':
@@ -746,6 +752,8 @@ def retry_sent_copy(SessionLocal, message_id):
 
 
 def recover_stuck_outbox(SessionLocal):
+    if not settings.mail_channel_enabled:
+        return
     threshold = now() - timedelta(minutes=10)
     with SessionLocal.begin() as db:
         rows = db.scalars(select(MailMessage).where(
@@ -879,6 +887,8 @@ def _process_sync_uid(SessionLocal, connection, account_id, validity, uid, activ
 
 
 def sync_account(SessionLocal, account_id):
+    if not settings.mail_channel_enabled:
+        return True
     with SessionLocal() as db:
         account = db.get(MailAccount, account_id)
         if not account or not account.active or not account.encrypted_password:

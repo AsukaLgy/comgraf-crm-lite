@@ -22,9 +22,16 @@ from ..models import (Attachment, Case, Client, Event, MailAccount, MailAttachme
 from ..repository import get_case, row
 from ..security import can, current_user, require
 from ..mail_transport import MailFailure
+from ..config import settings
 
 router = APIRouter(prefix='/api', tags=['Correo'])
 CASE_REF_RE = re.compile(r'\bCG-\d{6}\b', re.IGNORECASE)
+
+
+def require_mail_channel(user=Depends(current_user)):
+    if not settings.mail_channel_enabled:
+        raise HTTPException(409, 'La funcionalidad de correo está temporalmente deshabilitada.')
+    return user
 
 
 def require_admin(db, user):
@@ -68,7 +75,7 @@ def mail_status(user=Depends(current_user), db=Depends(get_db, scope='function')
 
 
 @router.put('/mail/config')
-def save_mail_config(data: s.MailConfigurationInput, user=Depends(current_user), db=Depends(get_db, scope='function')):
+def save_mail_config(data: s.MailConfigurationInput, user=Depends(require_mail_channel), db=Depends(get_db, scope='function')):
     require_admin(db, user)
     email_address = clean_address(data.email)
     if not email_address or email_address != data.email.strip().lower():
@@ -134,7 +141,7 @@ def save_mail_config(data: s.MailConfigurationInput, user=Depends(current_user),
 
 
 @router.post('/mail/test', status_code=202)
-def mail_test(data: s.MailTestInput, user=Depends(current_user), db=Depends(get_db, scope='function')):
+def mail_test(data: s.MailTestInput, user=Depends(require_mail_channel), db=Depends(get_db, scope='function')):
     require_admin(db, user)
     account = _current_account(db, lock=True)
     if not account or not account.encrypted_password:
@@ -169,7 +176,7 @@ def mail_test_status(message_id: int, user=Depends(current_user), db=Depends(get
 
 
 @router.delete('/mail/config')
-def disconnect_mail(user=Depends(current_user), db=Depends(get_db, scope='function')):
+def disconnect_mail(user=Depends(require_mail_channel), db=Depends(get_db, scope='function')):
     require_admin(db, user)
     account = _current_account(db, lock=True)
     if account:
@@ -221,7 +228,7 @@ def _request_hash(case_id, payload):
 
 
 @router.post('/cases/{case_id}/email/send', status_code=202)
-def queue_email(case_id: int, data: s.MailSendInput, user=Depends(current_user), db=Depends(get_db, scope='function')):
+def queue_email(case_id: int, data: s.MailSendInput, user=Depends(require_mail_channel), db=Depends(get_db, scope='function')):
     require(db, user, 'attention')
     case = get_case(db, user, case_id, lock=True)
     _require_case_editor(db, user, case)
@@ -283,7 +290,7 @@ def outbox_status(message_id: int, user=Depends(current_user), db=Depends(get_db
 
 
 @router.post('/mail/outbox/{message_id}/retry', status_code=202)
-def retry_outbox(message_id: int, data: s.MailRetryInput, user=Depends(current_user), db=Depends(get_db, scope='function')):
+def retry_outbox(message_id: int, data: s.MailRetryInput, user=Depends(require_mail_channel), db=Depends(get_db, scope='function')):
     require(db, user, 'attention')
     original = db.scalar(select(MailMessage).where(MailMessage.id == message_id).with_for_update())
     if not original or original.direction != 'Saliente' or not original.case_id:
@@ -315,7 +322,7 @@ def retry_outbox(message_id: int, data: s.MailRetryInput, user=Depends(current_u
 
 
 @router.post('/mail/outbox/{message_id}/retry-copy')
-def retry_outbox_copy(message_id: int, user=Depends(current_user), db=Depends(get_db, scope='function')):
+def retry_outbox_copy(message_id: int, user=Depends(require_mail_channel), db=Depends(get_db, scope='function')):
     require(db, user, 'attention')
     original = db.get(MailMessage, message_id)
     if not original or original.direction != 'Saliente' or not original.case_id:
@@ -409,7 +416,7 @@ def attend_email_messages(case_id: int, data: s.MailAttendInput, user=Depends(cu
 
 
 @router.post('/mail/pending/{message_id}/classify')
-def classify_mail(message_id: int, data: s.MailClassifyInput, user=Depends(current_user), db=Depends(get_db, scope='function')):
+def classify_mail(message_id: int, data: s.MailClassifyInput, user=Depends(require_mail_channel), db=Depends(get_db, scope='function')):
     require(db, user, 'attention')
     message = db.scalar(select(MailMessage).where(MailMessage.id == message_id, MailMessage.direction == 'Entrante').with_for_update())
     if not message or message.status in {'Vinculado', 'Ignorado'}:

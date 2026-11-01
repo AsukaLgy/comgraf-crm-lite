@@ -19,7 +19,7 @@ export default function Settings({ user }) {
   }
 
   return <>
-    <div className="page-heading"><div><div className="eyebrow">ADMINISTRACIÓN LOCAL</div><h1>Configuración</h1><p>Equipo, permisos y canales de comunicación.</p></div></div>
+    <div className="page-heading"><div><div className="eyebrow">ADMINISTRACIÓN LOCAL</div><h1>Configuración</h1><p>{user.channels?.mail || user.channels?.whatsapp ? 'Equipo, permisos y canales de comunicación.' : 'Equipo y permisos.'}</p></div></div>
     <Panel title="Mi cuenta" action={<button onClick={() => setModal({ type: 'password' })}>Cambiar contraseña</button>}><p>{user.name} · {user.roles.join(', ')}</p></Panel>
     {can(user, '*') && <>
       <Panel title="Usuarios y roles" action={<button className="primary" onClick={() => setModal({ type: 'user' })}>Crear usuario</button>}>
@@ -28,8 +28,8 @@ export default function Settings({ user }) {
       </Panel>
       <Panel title="Permisos por rol"><p className="muted">El rol de escaneo es exclusivo. Sus cuentas solo pueden escanear, consultar el resultado y solicitar excepciones.</p><ErrorBox error={roles.error}/>{roles.data?.roles.map((role) => <div className="role-row" key={role.name}><strong>{role.name}</strong><span>{role.permissions.join(', ')}</span>{role.name !== 'Administrador' && role.name !== 'Escáner de encuadernación' && <button onClick={() => setModal({ type: 'role', role })}>Configurar</button>}</div>)}</Panel>
     </>}
-    {can(user, '*') && <MailCompanyConfig user={user}/>}
-    <Panel title="WhatsApp"><h3>WhatsApp <Badge>No configurado</Badge></h3><p>Se conservan los borradores y el registro manual. Esta conexión todavía no envía mensajes.</p></Panel>
+    {can(user, '*') && user.channels?.mail && <MailCompanyConfig user={user}/>}
+    {user.channels?.whatsapp && <Panel title="WhatsApp"><h3>WhatsApp <Badge>No configurado</Badge></h3><p>Se conservan los borradores y el registro manual. Esta conexión todavía no envía mensajes.</p></Panel>}
     <Panel title="Instalación"><p>Zona horaria: <strong>{user.timezone}</strong></p><p>Datos compartidos en MySQL. Adjuntos almacenados en el servidor. Los respaldos deben incluir ambos.</p></Panel>
 
     {modal?.type === 'user' && <FormDialog title={modal.user ? 'Editar usuario' : 'Crear usuario'} initial={modal.user ? { name: modal.user.name, roles: modal.user.roles, active: modal.user.active, capacity: modal.user.capacity, password: '' } : { username: '', name: '', password: '', roles: ['Atención'], capacity: 20 }} onClose={() => setModal(null)} onSave={async (value) => { const body = { ...value, capacity: Number(value.capacity) }; if (modal.user && !body.password) body.password = null; await api('/users' + (modal.user ? '/' + modal.user.id : ''), { method: modal.user ? 'PUT' : 'POST', body }); qc.invalidateQueries({ queryKey: ['users'] }) }} render={(value, set) => <>

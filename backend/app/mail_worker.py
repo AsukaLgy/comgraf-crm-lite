@@ -37,6 +37,8 @@ def _task_health(task_name, account_id, *, success=None, error=None):
 
 
 def _outbox_once(account_id):
+    if not settings.mail_channel_enabled:
+        return True, None
     recover_stuck_outbox(SessionLocal)
     with SessionLocal() as db:
         message_id = db.scalar(select(MailMessage.id).where(
@@ -55,6 +57,8 @@ def _outbox_once(account_id):
 
 
 def _inbox_once(account_id):
+    if not settings.mail_channel_enabled:
+        return True, None
     healthy = sync_account(SessionLocal, account_id)
     if healthy:
         return True, None
@@ -72,6 +76,8 @@ def _inbox_once(account_id):
 
 
 def _copy_once(account_id):
+    if not settings.mail_channel_enabled:
+        return True, None
     with SessionLocal() as db:
         message_id = db.scalar(select(MailMessage.id).where(
             MailMessage.account_id == account_id,
@@ -93,6 +99,8 @@ def _copy_once(account_id):
 
 
 def _task_loop(task_name, work, interval, max_backoff=60):
+    if not settings.mail_channel_enabled:
+        return
     failures = 0
     lock_name = LOCKS[task_name]
     while True:
@@ -137,6 +145,9 @@ def _task_loop(task_name, work, interval, max_backoff=60):
 
 
 def run_worker_threads():
+    if not settings.mail_channel_enabled or not settings.mail_worker_enabled:
+        logger.info('Trabajador de correo pausado por configuración')
+        return
     specs = {
         'inbox': (_inbox_once, max(5, settings.mail_sync_interval_seconds), 300, 'mail-inbox'),
         'outbox': (_outbox_once, max(1, settings.mail_outbox_poll_seconds), 30, 'mail-outbox'),

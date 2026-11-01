@@ -28,7 +28,13 @@ class MailFailure(Exception):
         super().__init__(code)
 
 
+def _require_mail_channel():
+    if not settings.mail_channel_enabled:
+        raise MailFailure('channel_disabled')
+
+
 def open_imap():
+    _require_mail_channel()
     return imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT, ssl_context=ssl.create_default_context(), timeout=settings.mail_connect_timeout_seconds)
 
 
@@ -93,6 +99,7 @@ def check_imap(email_address, password):
 
 
 def check_smtp(email_address, password):
+    _require_mail_channel()
     connection = None
     phase = 'connect'
     try:
@@ -119,6 +126,7 @@ def check_smtp(email_address, password):
 
 
 def check_credentials(email_address, password):
+    _require_mail_channel()
     # A valid IMAP login does not imply SMTP works; verify each protocol independently.
     return {'imap': check_imap(email_address, password), 'smtp': check_smtp(email_address, password)}
 
@@ -171,6 +179,7 @@ def _imap_failure(exc, operation):
 
 
 def smtp_send(email_address, password, recipients, payload):
+    _require_mail_channel()
     connection = None
     phase = 'connect'
     try:
@@ -235,6 +244,7 @@ def _sent_folder(connection):
 
 
 def append_sent_copy(email_address, password, message_id, payload):
+    _require_mail_channel()
     connection = None
     try:
         connection = open_imap()
