@@ -79,7 +79,7 @@ export default function CaseAttention({
           {record.production && (
             <Link className="button" to={`/cases/${record.id}/print?production_id=${record.production.id}`}>
               <Printer size={16} />
-              Ficha de taller
+              Imprimir orden de producción
             </Link>
           )}
         </div>

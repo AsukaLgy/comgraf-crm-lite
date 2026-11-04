@@ -224,3 +224,25 @@ table{font-size:13px}th{font-size:12px;color:#475569}td small{font-size:13px}
 .composer-footer{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}.composer-footer>small{margin-right:auto}
 .historical-messages{margin-top:24px;border-top:1px solid var(--line);padding-top:16px}.historical-message{padding:14px 0;border-bottom:1px solid var(--line)}.historical-message-body{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:8px 0}.email-event-attachments a{display:inline-block;margin:3px 12px 3px 0;font-size:12px}
 @media(max-width:420px){.cai-print{padding:12px}.cai-print-header{grid-template-columns:minmax(0,1fr) 32mm}.cai-print .order-qr img,.cai-print .qr-placeholder,.cai-print .order-qr.cai-number-below>img,.cai-print .order-qr.cai-number-below>.qr-placeholder{width:27mm!important;height:27mm!important;min-width:27mm}}
+
+.order-preview-panel .panel-body{background:#f3f5f6;overflow-x:auto;padding:18px}
+.order-preview-sheet{border:1px solid var(--line);box-shadow:0 8px 24px #21323d16;max-width:100%}
+.order-preview-panel .cai-print{width:100%;padding:18px}
+
+@media print{
+  body:has(.order-preview-sheet) .app-shell{display:block}
+  body:has(.order-preview-sheet) .app-shell>:not(.workspace-main),
+  body:has(.order-preview-sheet) .workspace-main>:not(.main-content),
+  body:has(.order-preview-sheet) .main-content>:not(.case-grid),
+  body:has(.order-preview-sheet) .case-grid>:not(.case-main),
+  body:has(.order-preview-sheet) .case-main>:not(.order-preview-panel),
+  body:has(.order-preview-sheet) .order-preview-panel .panel-title{display:none!important}
+  body:has(.order-preview-sheet) .workspace-main,
+  body:has(.order-preview-sheet) .main-content,
+  body:has(.order-preview-sheet) .case-grid,
+  body:has(.order-preview-sheet) .case-main,
+  body:has(.order-preview-sheet) .order-preview-panel,
+  body:has(.order-preview-sheet) .order-preview-panel .panel,
+  body:has(.order-preview-sheet) .order-preview-panel .panel-body{display:block!important;margin:0!important;padding:0!important;border:0!important;width:auto!important;max-width:none!important;overflow:visible!important;box-shadow:none!important}
+  body:has(.order-preview-sheet) .order-preview-sheet{margin:0!important;padding:0!important;border:0!important;box-shadow:none!important}
+}

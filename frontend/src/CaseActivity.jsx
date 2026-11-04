@@ -18,6 +18,7 @@ export default function CaseActivity({ record, attention, user, person, onRefere
       {record.events.length ? (
         <ol className="timeline">
           {[...record.events].reverse().map((event) => {
+            const orderId = event.data?.production_id || event.data?.order_id
             return <li key={event.id} className={event.kind === 'Sistema' ? 'system' : ''}>
               <span className="timeline-icon">
                 {event.kind === 'Sistema' ? <Clock size={14} /> : <MessageSquare size={14} />}
@@ -30,21 +31,23 @@ export default function CaseActivity({ record, attention, user, person, onRefere
                   <time>{date(event.created_at)}</time>
                 </div>
                 <p>{event.data?.action === 'stage' ? event.body.replace('Taller', 'Encuadernación') : event.body}</p>
-                {(event.data?.production_id || event.data?.order_id) && event.data?.action !== 'converted' && (
-                  <p className="event-references"><Link to={`/cases/${record.id}?production_id=${event.data.production_id || event.data.order_id}`}>{event.data.order_number || `OP-${String(event.data.production_id || event.data.order_id).padStart(5,'0')}`}</Link></p>
+                {orderId && event.data?.action !== 'converted' && (
+                  <p className="event-references"><Link to={`/cases/${record.id}?production_id=${orderId}&tab=production`}>{event.data.order_number || `OP-${String(orderId).padStart(5,'0')}`}</Link></p>
                 )}
                 {event.data?.action === 'converted' && (
                   <p className="event-references">
-                    <Link to={`/cases/${record.id}?production_id=${event.data.production_id || event.data.order_id}`} onClick={() => onReference?.('production')}>
-                      Orden {event.data.order_number || `OP-${String(record.id).padStart(5, '0')}`}
-                    </Link>
+                    {orderId ? (
+                      <Link to={`/cases/${record.id}?production_id=${orderId}&tab=production`}>
+                        Orden {event.data.order_number || `OP-${String(orderId).padStart(5, '0')}`}
+                      </Link>
+                    ) : <span>Orden {event.data.order_number || 'sin identificador'}</span>}
                     {event.data.quote_id &&
                     (record.quotes || []).some((q) => q.id === event.data.quote_id) ? (
                       <>
                         {' '}
                         ·{' '}
                         <Link
-                          to={`#quote-${event.data.quote_id}`}
+                          to={`/cases/${record.id}?${orderId ? `production_id=${orderId}&` : ''}tab=quotes#quote-${event.data.quote_id}`}
                           onClick={() => onReference?.(`quote-${event.data.quote_id}`)}
                         >
                           Cotización {event.data.quote_number}, versión {event.data.quote_version}

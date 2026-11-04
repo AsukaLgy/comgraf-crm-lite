@@ -26,7 +26,7 @@ function printTextChunks(text, maxLength = 380) {
   return chunks
 }
 
-export default function CasePrintSheet({ id, record, person }) {
+export default function CasePrintSheet({ id, record, person, preview = false }) {
   const production = record.production
   const printItems =
     production?.specs_snapshot?.items || production?.approved_snapshot?.items || record.items || []
@@ -40,14 +40,14 @@ export default function CasePrintSheet({ id, record, person }) {
       email: record.case_contact?.email || record.client.emails?.[0] || '',
     }
     return (
-      <article className="print-sheet cai-print">
-        <div className="print-actions">
+      <article className={`print-sheet cai-print${preview ? ' order-preview-sheet' : ''}`}>
+        {!preview && <div className="print-actions">
           <button onClick={() => window.print()}>
             <Printer size={16} />
             Imprimir / Guardar PDF
           </button>
-          <Link to={`/cases/${id}?production_id=${production.id}`}>Volver a la orden</Link>
-        </div>
+          <Link to={`/cases/${id}?production_id=${production.id}&tab=production`}>Volver a la orden</Link>
+        </div>}
         <header className="cai-print-header">
           <div className="cai-print-heading">
             <div className="brand-name">
@@ -167,20 +167,20 @@ export default function CasePrintSheet({ id, record, person }) {
     )
   }
   return (
-    <article className="print-sheet">
-      <div className="print-actions">
+    <article className={`print-sheet${preview ? ' order-preview-sheet' : ''}`}>
+      {!preview && <div className="print-actions">
         <button onClick={() => window.print()}>
           <Printer size={16} />
           Imprimir / Guardar PDF
         </button>
-        <Link to={`/cases/${id}${production?.id ? `?production_id=${production.id}` : ''}`}>
+        <Link to={`/cases/${id}${production?.id ? `?production_id=${production.id}&tab=production` : ''}`}>
           Volver a la solicitud
         </Link>
-      </div>
+      </div>}
       <header>
         <div>
           <div className="brand-name">COMGRAF</div>
-          <p>Comunicación Gráfica · Ficha de taller</p>
+          <p>Comunicación Gráfica · Orden de producción</p>
         </div>
         <h1>
           {record.number}

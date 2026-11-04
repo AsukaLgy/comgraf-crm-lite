@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Plus, Paperclip } from 'lucide-react'
+import { ArrowLeft, Plus, Paperclip, Printer } from 'lucide-react'
 import { api, can, date, money, quantity, toUTC, timezone, localInput, uid } from './api'
 import { Badge, ErrorBox, Loading, Panel, Operation, FormDialog, Field, Empty } from './components'
 import ProductForm, { Specifications } from './ProductForm'
@@ -13,6 +13,14 @@ import DeliveryFinance from './DeliveryFinance'
 import ProductionStages from './ProductionStages'
 import { HNL_CURRENCY } from './domain'
 const reason = { name: 'reason', label: 'Motivo', type: 'textarea', required: true }
+const sectionParam = {
+  Actividad: 'activity',
+  Cotizaciones: 'quotes',
+  Producción: 'production',
+  'Entregas y cobros': 'delivery',
+  Archivos: 'files',
+}
+const sectionByParam = Object.fromEntries(Object.entries(sectionParam).map(([section, param]) => [param, section]))
 
 export default function CasePage({ user, print = false }) {
   const { id } = useParams(),
@@ -21,9 +29,14 @@ export default function CasePage({ user, print = false }) {
     selectedProductionId = searchParams.get('production_id') || '',
     qc = useQueryClient(),
     [modal, setModal] = useState(null),
-    [section, setSection] = useState('Actividad'),
     [attentionError, setAttentionError] = useState(null),
     [attentionBusy, setAttentionBusy] = useState(false)
+  const section = sectionByParam[searchParams.get('tab')] || (selectedProductionId ? 'Producción' : 'Actividad')
+  function setSection(next) {
+    const params = new URLSearchParams(searchParams)
+    params.set('tab', sectionParam[next])
+    setSearchParams(params)
+  }
   const query = useQuery({ queryKey: ['case', id, selectedProductionId], queryFn: () => api('/cases/' + id + (selectedProductionId ? `?production_id=${selectedProductionId}` : '')), refetchInterval: print ? false : 15000, refetchOnWindowFocus: !print }),
     people = useQuery({ queryKey: ['users'], queryFn: () => api('/users') })
   if (query.isPending) return <Loading />
@@ -296,7 +309,6 @@ export default function CasePage({ user, print = false }) {
               user={user}
               person={person}
               onReference={(reference) => {
-                setSection(reference === 'production' ? 'Producción' : 'Cotizaciones')
                 window.setTimeout(
                   () =>
                     document
@@ -382,7 +394,7 @@ export default function CasePage({ user, print = false }) {
                           Generar orden con esta versión
                         </button>
                       )}
-                      {q.production_id && <Link className="button" to={`/cases/${c.id}?production_id=${q.production_id}`}>Ver {q.order_number}</Link>}
+                      {q.production_id && <Link className="button" to={`/cases/${c.id}?production_id=${q.production_id}&tab=production`}>Ver {q.order_number}</Link>}
                     </div>
                   </article>
                 ))
@@ -396,7 +408,7 @@ export default function CasePage({ user, print = false }) {
           {section === 'Producción' && c.production_count > 0 && (
             <Panel title={`Órdenes de producción · ${c.production_count} · ${c.production_pending_count} pendientes`} action={activeAttention && <button className="primary" onClick={() => setModal({ type: 'convert' })}><Plus size={15}/>Agregar orden de producción</button>}>
               <div className="order-selector" role="list" aria-label="Órdenes de producción">
-                {c.productions.map((order) => <Link role="listitem" key={order.id} className={String(order.id)===String(p?.id)?'order-card active':'order-card'} to={`/cases/${c.id}?production_id=${order.id}`}>
+                {c.productions.map((order) => <Link role="listitem" key={order.id} className={String(order.id)===String(p?.id)?'order-card active':'order-card'} to={`/cases/${c.id}?production_id=${order.id}&tab=production`}>
                   <strong>{order.order_number}</strong><span>{order.stage_label || 'Pendiente de clasificación'}</span><span>{order.delivery_status==='Completa'?'Entregada':`Entrega ${order.delivery_status}`}</span><span>{order.committed_date?`Compromiso ${date(order.committed_date)}`:'Sin fecha comprometida'}</span>
                 </Link>)}
               </div>
@@ -543,6 +555,16 @@ export default function CasePage({ user, print = false }) {
                   </button>
                 )}
             </Panel>
+          )}
+          {section === 'Producción' && p && (
+            <div className="order-preview-panel">
+              <Panel
+                title={`Vista previa · ${p.order_number}`}
+                action={<button type="button" className="primary" onClick={() => window.print()}><Printer size={16} />Imprimir orden de producción</button>}
+              >
+                <CasePrintSheet id={id} record={c} person={person} preview />
+              </Panel>
+            </div>
           )}
           {section === 'Entregas y cobros' && p && (
             <DeliveryFinance
@@ -790,7 +812,7 @@ export default function CasePage({ user, print = false }) {
           quote={modal.type === 'quote'}
           source={modal.source}
           onClose={close}
-          onCreated={(order) => {setSearchParams({ production_id: String(order.id) });setSection('Producción')}}
+          onCreated={(order) => {setSearchParams({ production_id: String(order.id), tab: 'production' })}}
         />
       )}
       {modal?.type === 'upload' && (
