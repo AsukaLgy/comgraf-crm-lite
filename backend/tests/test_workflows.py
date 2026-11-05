@@ -82,7 +82,7 @@ def test_multiple_orders_keep_products_stages_deliveries_and_calendar_separate(c
     result=scan_order(clients,first_view)
     assert result['result']=='confirmed_waiting'
     assert result['pending_orders'][0]['order_number']==f'OP-{second_id:05d}'
-    assert result['pending_orders'][0]['reason']=='Etapa actual: Impresión'
+    assert result['pending_orders'][0]['reason']=='Pendiente de confirmar trabajo terminado'
     second_view=must(api.get(f'/api/cases/{c["id"]}?production_id={second_id}'))
     second_view=mutate(api,second_view,'production/stage',{'production_id':second_id,'stage':'WORKSHOP'})
     result=scan_order(clients,second_view)
@@ -142,21 +142,34 @@ def test_binding_scans_are_idempotent_grouped_and_scanner_role_is_limited(client
     results=[response.json() for response in simultaneous]
     assert {result['result'] for result in results}=={'confirmed_waiting','already_confirmed'}
     waiting=next(result for result in results if result['result']=='confirmed_waiting')
-    assert waiting['pending_orders'][0]['reason']=='Etapa actual: Impresión'
+    assert waiting['pending_orders'][0]['order_number']==f'OP-{second_id:05d}'
+    assert waiting['pending_orders'][0]['reason']=='Pendiente de confirmar trabajo terminado'
     repeated=must(scanner.post('/api/scanner/scan',json={'scan_id':first_qr}))
     assert repeated['result']=='already_confirmed'
-    assert scanner.post('/api/scanner/scan',json={'scan_id':second_qr}).status_code==409
+    assert must(scanner.get('/api/scanner/lookup',params={'qr':second_qr}))['can_confirm']
     first_after=must(api.get(f'/api/cases/{case["id"]}?production_id={first_id}'))
     assert first_after['production']['stage']=='WORKSHOP' and first_after['production']['binding_confirmed_cycle']==0
-    second=must(api.get(f'/api/cases/{case["id"]}?production_id={second_id}'))
-    second=mutate(api,second,'production/stage',{'production_id':second_id,'stage':'WORKSHOP'})
-    released=must(scanner.post('/api/scanner/scan',json={'scan_id':second_qr}))
+    with ThreadPoolExecutor(2) as pool:
+        final_scans=list(pool.map(lambda client: client.post('/api/scanner/scan',json={'scan_id':second_qr}),
+            [scanner,clients['scanner2']]))
+    assert [response.status_code for response in final_scans]==[200,200]
+    assert {response.json()['result'] for response in final_scans}=={'released','already_confirmed'}
+    released=next(response.json() for response in final_scans if response.json()['result']=='released')
     assert released['result']=='released' and released['released_orders']==[f'OP-{first_id:05d}',f'OP-{second_id:05d}']
     assert scanner.post('/api/scanner/scan',json={'scan_id':second_qr}).json()['result']=='already_confirmed'
     after=must(api.get(f'/api/cases/{case["id"]}?production_id={first_id}'))
     assert after['production']['stage']=='READY' and not after['deliveries'] and after['balance']=='1000.00'
     confirmations=[event for event in after['events'] if event['data'].get('action')=='binding_scan_confirmed' and event['data'].get('production_id')==first_id]
     assert len(confirmations)==1 and confirmations[0]['actor_id'] in {accounts['scanner']['id'],accounts['scanner2']['id']}
+    second_after=must(api.get(f'/api/cases/{case["id"]}?production_id={second_id}'))
+    assert second_after['production']['stage']=='READY'
+    printing_confirmation=next(event for event in second_after['events'] if event['data'].get('action')=='binding_scan_confirmed' and event['data'].get('production_id')==second_id)
+    assert printing_confirmation['data']['from']=='PRINTING' and printing_confirmation['data']['production_cycle']==0
+    assert 'La etapa registrada era Impresión' in printing_confirmation['body']
+    printing_release=next(event for event in second_after['events'] if event['data'].get('origin')=='binding_scan_group' and event['data'].get('production_id')==second_id and event['data'].get('action')=='stage')
+    assert printing_release['data']['from']=='PRINTING' and printing_release['data']['to']=='READY'
+    assert 'seconds' not in printing_release['data']
+    assert len([event for event in second_after['events'] if event['data'].get('action')=='binding_group_released'])==1
 
     # A real reclamo starts a new bindery cycle without rewinding its sibling.
     after=mutate(api,after,'production/stage',{'production_id':first_id,'stage':'WORKSHOP','reason':'Reclamo: corregir acabado'})
@@ -170,15 +183,155 @@ def test_binding_scans_are_idempotent_grouped_and_scanner_role_is_limited(client
     assert len(confirmations)==2
 
 
+def test_single_printing_order_can_be_confirmed_without_bindery_transition(clients):
+    api=clients['admin']; scanner=clients['scanner']
+    _,case=create(api,'Impresión terminada físicamente')
+    case=mutate(api,case,'take')
+    case=mutate(api,case,'convert',conversion())
+    production_id=case['production']['id']
+    qr='CGOP1:'+case['production']['scan_id']
+    assert scanner.post('/api/scanner/scan',json={'scan_id':qr}).status_code==409
+    assert scanner.post('/api/scanner/scan',json={'scan_id':'QR-inválido'}).status_code==422
+    case=mutate(api,case,'production/stage',{'production_id':production_id,'stage':'PRINTING'})
+    lookup=must(scanner.get('/api/scanner/lookup',params={'qr':qr}))
+    assert lookup['can_confirm'] and lookup['order']['stage']=='PRINTING'
+    result=must(scanner.post('/api/scanner/scan',json={'scan_id':qr}))
+    assert result['result']=='released' and result['released_orders']==[f'OP-{production_id:05d}']
+    assert must(scanner.post('/api/scanner/scan',json={'scan_id':qr}))['result']=='already_confirmed'
+    after=must(api.get(f'/api/cases/{case["id"]}?production_id={production_id}'))
+    assert after['production']['stage']=='READY' and not after['deliveries']
+    stages=[event['data'] for event in after['events'] if event['data'].get('action')=='stage' and event['data'].get('production_id')==production_id]
+    assert any(event.get('from')=='PRINTING' and event.get('to')=='READY' for event in stages)
+    assert not any(event.get('from')=='PRINTING' and event.get('to')=='WORKSHOP' for event in stages)
+    assert len([event for event in after['events'] if event['data'].get('action')=='binding_scan_confirmed'])==1
+
+
+def test_manual_finish_from_printing_and_workshop_has_same_cycle_as_qr(clients, accounts):
+    api=clients['admin']; printer=clients['printer']; scanner=clients['scanner']
+    _,case=create(api,'Confirmación manual de dos OP')
+    case=mutate(api,case,'take'); first=mutate(api,case,'convert',conversion())
+    first_id=first['production']['id']; first_qr='CGOP1:'+first['production']['scan_id']
+    second=mutate(api,first,'convert',conversion()); second_id=second['production']['id']
+    second_qr='CGOP1:'+second['production']['scan_id']
+    url=f'/api/cases/{case["id"]}/production/confirm-finished'
+    assert api.post(url,json={'production_id':first_id}).status_code==409
+    assert clients['agent'].post(url,json={'production_id':first_id}).status_code==403
+    assert clients['cashier'].post(url,json={'production_id':first_id}).status_code==403
+    assert scanner.post(url,json={'production_id':first_id}).status_code==403
+    first=mutate(api,must(api.get(f'/api/cases/{case["id"]}?production_id={first_id}')),'production/stage',{'production_id':first_id,'stage':'PRINTING'})
+    second=move_to_bindery(api,must(api.get(f'/api/cases/{case["id"]}?production_id={second_id}')),second_id)
+    first=must(api.get(f'/api/cases/{case["id"]}?production_id={first_id}'))
+    first=mutate(api,first,'production/block',{'production_id':first_id,'reason':'Revisar acabado'})
+    assert printer.post(url,json={'production_id':first_id}).status_code==409
+    first=mutate(api,first,'production/unblock',{'production_id':first_id,'reason':'Acabado revisado'})
+    waiting=must(printer.post(url,json={'production_id':first_id}))
+    assert waiting['result']=='confirmed_waiting' and waiting['message']=='Trabajo terminado confirmado. Pendiente de completar las demás órdenes.'
+    assert [row['order_number'] for row in waiting['pending_orders']]==[f'OP-{second_id:05d}']
+    assert waiting['order']['order_number']==f'OP-{first_id:05d}' and waiting['order']['confirmed']
+    summary=must(api.get(f'/api/cases/{case["id"]}?production_id={first_id}'))['productions']
+    confirmed_order=next(order for order in summary if order['id']==first_id)
+    pending_order=next(order for order in summary if order['id']==second_id)
+    assert confirmed_order['binding_confirmed_at'] and confirmed_order['binding_confirmed_cycle']==confirmed_order['workflow_cycle']
+    assert pending_order['binding_confirmed_at'] is None and pending_order['order_number']==f'OP-{second_id:05d}'
+    assert must(scanner.get('/api/scanner/lookup',params={'qr':first_qr}))['order']['confirmed']
+    assert must(scanner.post('/api/scanner/scan',json={'scan_id':first_qr}))['result']=='already_confirmed'
+    assert must(api.post(url,json={'production_id':first_id}))['result']=='already_confirmed'
+    released=must(scanner.post('/api/scanner/scan',json={'scan_id':second_qr}))
+    assert released['result']=='released' and set(released['released_orders'])=={f'OP-{first_id:05d}',f'OP-{second_id:05d}'}
+    assert must(api.post(url,json={'production_id':second_id}))['result']=='already_confirmed'
+    after=must(api.get(f'/api/cases/{case["id"]}?production_id={first_id}'))
+    assert after['production']['stage']=='READY' and after['lifecycle']=='Activo' and not after['deliveries']
+    manual=[e for e in after['events'] if e['data'].get('action')=='work_finished_confirmed']
+    scanned=[e for e in after['events'] if e['data'].get('action')=='binding_scan_confirmed']
+    releases=[e for e in after['events'] if e['data'].get('action')=='binding_group_released']
+    assert len(manual)==len(scanned)==len(releases)==1
+    assert manual[0]['actor_id']==accounts['printer']['id'] and manual[0]['data']['from']=='PRINTING'
+    assert manual[0]['data']['origin']=='crm_manual' and manual[0]['data']['production_cycle']==0
+    assert f'OP-{first_id:05d}' in manual[0]['body']
+    assert scanned[0]['data']['from']=='WORKSHOP' and scanned[0]['data']['origin']=='scanner'
+    stage=[e for e in after['events'] if e['data'].get('action')=='stage' and e['data'].get('production_id')==first_id and e['data'].get('to')=='READY']
+    assert len(stage)==1 and stage[0]['data']['from']=='PRINTING'
+    assert not any(e['data'].get('from')=='PRINTING' and e['data'].get('to')=='WORKSHOP' and e['data'].get('production_id')==first_id for e in after['events'])
+
+
+def test_manual_finish_from_workshop_and_cancelled_order_is_denied(clients):
+    api=clients['admin']
+    _,case=create(api,'Trabajo terminado en encuadernación')
+    case=mutate(api,case,'take'); case=mutate(api,case,'convert',conversion())
+    order_id=case['production']['id']
+    case=move_to_bindery(api,case,order_id)
+    result=must(api.post(f'/api/cases/{case["id"]}/production/confirm-finished',json={'production_id':order_id}))
+    assert result['result']=='released'
+    after=must(api.get(f'/api/cases/{case["id"]}?production_id={order_id}'))
+    assert after['production']['stage']=='READY'
+    manual=next(e for e in after['events'] if e['data'].get('action')=='work_finished_confirmed')
+    assert manual['data']['from']=='WORKSHOP'
+    assert not any(e['data'].get('origin')=='crm_manual_group' and e['data'].get('from')=='PRINTING' for e in after['events'])
+
+    _,cancelled=create(api,'Orden anulada sin confirmación')
+    cancelled=mutate(api,cancelled,'take'); cancelled=mutate(api,cancelled,'convert',conversion())
+    cancelled=mutate(api,cancelled,'production/stage',{'production_id':cancelled['production']['id'],'stage':'PRINTING'})
+    cancelled=mutate(api,cancelled,'production/cancel',{'production_id':cancelled['production']['id'],
+        'reason':'Cliente anuló la orden','treatment':'SIN_CARGO'})
+    assert api.post(f'/api/cases/{cancelled["id"]}/production/confirm-finished',json={'production_id':cancelled['production']['id']}).status_code==409
+
+
+def test_manual_finish_partial_release_and_reclaim_cycle(clients):
+    api=clients['admin']; scanner=clients['scanner']; coordinator=clients['coordinator']
+    _,case=create(api,'Liberación parcial tras confirmación manual')
+    case=mutate(api,case,'take'); first=mutate(api,case,'convert',conversion())
+    first_id=first['production']['id']; qr='CGOP1:'+first['production']['scan_id']
+    second=mutate(api,first,'convert',conversion())
+    first=mutate(api,must(api.get(f'/api/cases/{case["id"]}?production_id={first_id}')),'production/stage',{'production_id':first_id,'stage':'PRINTING'})
+    url=f'/api/cases/{case["id"]}/production/confirm-finished'
+    waiting=must(api.post(url,json={'production_id':first_id}))
+    assert waiting['result']=='confirmed_waiting' and waiting['can_request_partial']
+    request=must(scanner.post('/api/scanner/exceptions',json={'scan_id':qr,'comment':'Entrega anticipada solicitada','request_key':key()}),201)
+    approved=must(coordinator.post(f'/api/scanner/exceptions/{request["id"]}/decision',json={'approve':True,'comment':'Autorizado para retirar','request_key':key()}))
+    assert approved['status']=='Aprobada'
+    first=must(api.get(f'/api/cases/{case["id"]}?production_id={first_id}'))
+    assert first['production']['stage']=='READY'
+    assert must(api.post(url,json={'production_id':first_id}))['result']=='already_confirmed'
+    first=mutate(api,first,'production/stage',{'production_id':first_id,'stage':'PRINTING','reason':'Reclamo de cliente'})
+    assert first['production']['workflow_cycle']==1 and first['production']['binding_confirmed_at'] is None
+    again=must(api.post(url,json={'production_id':first_id}))
+    assert again['result']=='confirmed_waiting' and again['order']['confirmed']
+    assert must(scanner.post('/api/scanner/scan',json={'scan_id':qr}))['result']=='already_confirmed'
+    after=must(api.get(f'/api/cases/{case["id"]}?production_id={first_id}'))
+    confirms=[e for e in after['events'] if e['data'].get('action')=='work_finished_confirmed']
+    assert len(confirms)==2 and {e['data']['production_cycle'] for e in confirms}=={0,1}
+
+
+def test_simultaneous_manual_and_qr_confirm_only_once(clients):
+    api=clients['admin']; printer=clients['printer']; scanner=clients['scanner']
+    _,case=create(api,'Confirmación simultánea')
+    case=mutate(api,case,'take'); case=mutate(api,case,'convert',conversion())
+    production_id=case['production']['id']; qr='CGOP1:'+case['production']['scan_id']
+    case=mutate(api,case,'production/stage',{'production_id':production_id,'stage':'PRINTING'})
+    url=f'/api/cases/{case["id"]}/production/confirm-finished'
+    with ThreadPoolExecutor(2) as pool:
+        manual=pool.submit(printer.post,url,json={'production_id':production_id})
+        scanned=pool.submit(scanner.post,'/api/scanner/scan',json={'scan_id':qr})
+        results=[manual.result(),scanned.result()]
+    assert [response.status_code for response in results]==[200,200]
+    assert {response.json()['result'] for response in results}=={'released','already_confirmed'}
+    after=must(api.get(f'/api/cases/{case["id"]}?production_id={production_id}'))
+    assert after['production']['stage']=='READY'
+    assert len([e for e in after['events'] if e['data'].get('action') in {'work_finished_confirmed','binding_scan_confirmed'}])==1
+    assert len([e for e in after['events'] if e['data'].get('action')=='binding_group_released'])==1
+    assert len([e for e in after['events'] if e['data'].get('action')=='pickup_followup_created'])==1
+
+
 def test_partial_release_requires_real_authorization_and_revalidates_cycle(clients):
     api=clients['admin']; scanner=clients['scanner']; coordinator=clients['coordinator']
     _,case=create(api,'Excepción de liberación')
     case=mutate(api,case,'take'); first=mutate(api,case,'convert',conversion()); first_id=first['production']['id']
     second=mutate(api,first,'convert',conversion())
-    first=move_to_bindery(api,must(api.get(f'/api/cases/{case["id"]}?production_id={first_id}')),first_id)
+    first=mutate(api,must(api.get(f'/api/cases/{case["id"]}?production_id={first_id}')),'production/stage',{'production_id':first_id,'stage':'PRINTING'})
     scan_id='CGOP1:'+first['production']['scan_id']
     waiting=must(scanner.post('/api/scanner/scan',json={'scan_id':scan_id}))
     assert waiting['result']=='confirmed_waiting'
+    assert waiting['can_request_partial']
     assert scanner.post('/api/scanner/exceptions',json={'scan_id':scan_id,'comment':' ','request_key':key()}).status_code==422
     request_body={'scan_id':scan_id,'comment':'El cliente retira esta orden hoy','request_key':key()}
     request=must(scanner.post('/api/scanner/exceptions',json=request_body),201)
@@ -196,6 +349,8 @@ def test_partial_release_requires_real_authorization_and_revalidates_cycle(clien
     order=must(api.get(f'/api/cases/{case["id"]}?production_id={first_id}'))
     other=must(api.get(f'/api/cases/{case["id"]}?production_id={second["production"]["id"]}'))
     assert order['production']['stage']=='READY' and other['production']['stage']=='APPROVAL'
+    partial_stage=next(event for event in order['events'] if event['data'].get('origin')=='partial_release' and event['data'].get('action')=='stage')
+    assert partial_stage['data']['from']=='PRINTING' and partial_stage['data']['to']=='READY'
     assert order['lifecycle']=='Activo' and not order['deliveries'] and order['balance']=='1000.00'
     scanner_result=must(scanner.get(f'/api/scanner/exceptions/{request["id"]}'))
     assert scanner_result['status']=='Aprobada' and scanner_result['order']['stage']=='READY'
@@ -546,6 +701,7 @@ def test_historical_ambiguous_stage_requires_explicit_classification(clients):
     c=must(api.get(f'/api/cases/{c["id"]}'))
     assert c['production']['stage'] is None and c['production']['legacy_stage']=='En producción'
     assert c['production']['stage_label']=='Pendiente de clasificación' and c['production']['active_elapsed_seconds'] is None
+    assert clients['scanner'].post('/api/scanner/scan',json={'scan_id':'CGOP1:'+c['production']['scan_id']}).status_code==409
     c=mutate(api,c,'production/stage',{'stage':'PRINTING'})
     assert c['production']['stage']=='PRINTING' and not c['production']['classification_required']
     classified=[e for e in c['events'] if e['data'].get('action')=='stage_classified']
@@ -679,8 +835,7 @@ def test_production_quote_delivery_debt_and_idempotent_payment(clients,accounts)
     c=mutate(api,c,'payments',{'amount':'900','reference':'Recibo 002'})
     assert c['payment_status']=='Pagado'
     assert c['lifecycle']=='Completado'
-    repeated_scan=must(clients['scanner'].post('/api/scanner/scan',json={'scan_id':'CGOP1:'+c['production']['scan_id']}))
-    assert repeated_scan['result']=='already_confirmed' and repeated_scan['order']['delivery_complete']
+    assert clients['scanner'].post('/api/scanner/scan',json={'scan_id':'CGOP1:'+c['production']['scan_id']}).status_code==409
     c=mutate(api,c,'reactivate')
     entry=c['ledger'][-1]['id']
     c=mutate(api,c,f'payments/{entry}/reverse',{'reason':'Transferencia rechazada'})
@@ -732,6 +887,7 @@ def test_permissions_files_csrf_and_cancellation(clients,accounts):
     c=mutate(api,c,'payments',{'amount':'100','reference':'Anticipo'})
     c=mutate(api,c,'production/cancel',{'reason':'Cliente cancela pedido','treatment':'IMPORTE_FINAL','final_amount':'1000.00'})
     assert c['balance']=='900.00' and len(c['ledger'])==2 and c['production']['cancelled_at']
+    assert clients['scanner'].post('/api/scanner/scan',json={'scan_id':'CGOP1:'+c['production']['scan_id']}).status_code==409
 
 
 def test_cancellation_final_amount_refunds_and_idempotency(clients):

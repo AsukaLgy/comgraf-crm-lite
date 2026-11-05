@@ -240,6 +240,10 @@ class StageInput(Mutation):
     reason: str = Field(default='', max_length=3000)
 
 
+class WorkFinishedInput(Input):
+    production_id: int = Field(ge=1)
+
+
 # ---- Producción, entregas y movimientos financieros ----
 class ReasonInput(Mutation):
     reason: str = Field(min_length=3, max_length=3000)

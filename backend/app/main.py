@@ -122,6 +122,7 @@ def version():
 
 static = Path(settings.static_dir)
 if (static / 'assets').exists(): app.mount('/assets', StaticFiles(directory=static / 'assets'), name='assets')
+if (static / 'branding').exists(): app.mount('/branding', StaticFiles(directory=static / 'branding'), name='branding')
 
 
 @app.get('/{path:path}')

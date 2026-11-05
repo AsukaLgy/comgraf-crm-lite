@@ -10,11 +10,21 @@ import {
 
 const reason = { name: 'reason', label: 'Motivo del reclamo', type: 'textarea', required: true }
 
-export default function ProductionStages({ record, canManage, onSchedule, onDelivery, operation }) {
+export default function ProductionStages({ record, canManage, onSelectProduction, onConfirmFinished, confirmBusy, onSchedule, onDelivery, operation }) {
   const production = record.production
   const currentIndex = PRODUCTION_STAGES.indexOf(production.stage)
   const next = PRODUCTION_NEXT_STAGE[production.stage]
   const previous = currentIndex > 0 ? PRODUCTION_STAGES.slice(0, currentIndex) : []
+  const confirmed = Boolean(production.binding_confirmed_at && production.binding_confirmed_cycle === production.workflow_cycle)
+  const finishingStage = [PRODUCTION_STAGE.PRINTING, PRODUCTION_STAGE.WORKSHOP].includes(production.stage)
+  const canConfirm = canManage && finishingStage && !confirmed && !production.classification_required &&
+    !production.cancelled_at && !production.blocked_since && record.delivery_status !== 'Completa'
+  const pendingOrders = confirmed && finishingStage ? record.productions.filter((order) =>
+    order.id !== production.id && !order.cancelled_at && order.stage !== PRODUCTION_STAGE.READY &&
+    order.delivery_status !== 'Completa' && !(order.binding_confirmed_at && !order.blocked_since &&
+      order.binding_confirmed_cycle === order.workflow_cycle &&
+      [PRODUCTION_STAGE.PRINTING, PRODUCTION_STAGE.WORKSHOP].includes(order.stage) &&
+      !order.classification_required)) : []
   const visited = new Set([production.stage])
   for (const event of record.events || []) {
     if (event.data?.production_id !== production.id && !(record.production_count === 1 && !event.data?.production_id)) continue
@@ -46,6 +56,24 @@ export default function ProductionStages({ record, canManage, onSchedule, onDeli
 
   return (
     <section className="production-path">
+      <div className="production-path-header">
+        <div className="production-path-identity">
+          <small>ORDEN SELECCIONADA</small>
+          <strong>{production.order_number}</strong>
+          <span>{production.stage_label || 'Pendiente de clasificación'}</span>
+        </div>
+        {record.productions.length > 1 && (
+          <label className="production-order-picker">
+            <span>Cambiar OP</span>
+            <select aria-label="Orden de producción seleccionada" value={production.id}
+              onChange={(event) => onSelectProduction(Number(event.target.value))}>
+              {record.productions.map((order) => <option key={order.id} value={order.id}>
+                {order.order_number} · {order.stage_label || 'Pendiente de clasificación'}
+              </option>)}
+            </select>
+          </label>
+        )}
+      </div>
       <ol aria-label="Etapas de producción">
         {PRODUCTION_STAGES.map((stage, index) => (
           <li
@@ -88,7 +116,7 @@ export default function ProductionStages({ record, canManage, onSchedule, onDeli
         </div>
       ) : (
         <div className="production-controls">
-          <span>
+          <div className="production-status">
             {production.blocked_since && (
               <Badge tone="red">Bloqueado: {production.block_reason}</Badge>
             )}
@@ -96,22 +124,30 @@ export default function ProductionStages({ record, canManage, onSchedule, onDeli
               canManage && <button onClick={classify}>Clasificar etapa</button>
             ) : (
               <>
-                <strong>
-                  {production.stage_label}
-                  {record.delivery_status === 'Completa' ? ' · Entregado' : ''}
-                </strong>
+                {confirmed && finishingStage && <Badge tone="teal">Trabajo terminado confirmado</Badge>}
+                {!confirmed && finishingStage && !canConfirm && !production.blocked_since &&
+                  <Badge tone="amber">Pendiente de confirmación</Badge>}
+                {production.stage === PRODUCTION_STAGE.READY && <Badge tone="teal">Listo para entregar</Badge>}
+                {record.delivery_status === 'Completa' && <Badge tone="teal">Entregado</Badge>}
                 {production.active_elapsed_seconds != null && (
                   <small>
                     {Math.floor(production.active_elapsed_seconds / 3600)} h en etapa activa
                   </small>
                 )}
+                {pendingOrders.length > 0 && <span className="production-pending-orders">
+                  Pendientes: {pendingOrders.map((order) => <button type="button" className="text-button"
+                    key={order.id} onClick={() => onSelectProduction(order.id)}>{order.order_number}</button>)}
+                </span>}
               </>
             )}
-          </span>
+          </div>
           {canManage &&
             !production.classification_required &&
             record.delivery_status !== 'Completa' && (
               <div className="actions">
+                {canConfirm && <button className="primary" onClick={onConfirmFinished} disabled={confirmBusy}>
+                  {confirmBusy ? 'Confirmando…' : 'Confirmar trabajo terminado'}
+                </button>}
                 <button onClick={onSchedule}>Programar</button>
                 {production.stage === PRODUCTION_STAGE.READY ? (
                   <>
@@ -161,13 +197,10 @@ export default function ProductionStages({ record, canManage, onSchedule, onDeli
                       </button>
                     )}
                   </>
+                ) : confirmed && finishingStage ? (
+                  <small>La entrega se habilita al completar el grupo de órdenes.</small>
                 ) : production.stage === PRODUCTION_STAGE.WORKSHOP ? (
-                  <div className="binding-stage-gate">
-                    <Badge tone={production.binding_confirmed_at && production.binding_confirmed_cycle === production.workflow_cycle ? 'teal' : 'amber'}>
-                      {production.binding_confirmed_at && production.binding_confirmed_cycle === production.workflow_cycle ? 'Encuadernación confirmada' : 'Pendiente de escaneo'}
-                    </Badge>
-                    <small>La terminal de escaneo habilita la entrega cuando se complete el grupo de órdenes.</small>
-                  </div>
+                  <small>También puedes confirmar con el escáner QR.</small>
                 ) : (
                   <>
                     <button

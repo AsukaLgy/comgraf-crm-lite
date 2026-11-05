@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Plus, Paperclip, Printer } from 'lucide-react'
@@ -29,12 +29,26 @@ export default function CasePage({ user, print = false }) {
     selectedProductionId = searchParams.get('production_id') || '',
     qc = useQueryClient(),
     [modal, setModal] = useState(null),
+    [finishResult, setFinishResult] = useState(null),
+    [finishBusy, setFinishBusy] = useState(false),
     [attentionError, setAttentionError] = useState(null),
     [attentionBusy, setAttentionBusy] = useState(false)
+  useEffect(() => {
+    const closeOnHistory = () => setModal((current) => current?.type === 'confirm_finished' ? null : current)
+    window.addEventListener('popstate', closeOnHistory)
+    return () => window.removeEventListener('popstate', closeOnHistory)
+  }, [])
   const section = sectionByParam[searchParams.get('tab')] || (selectedProductionId ? 'Producción' : 'Actividad')
   function setSection(next) {
     const params = new URLSearchParams(searchParams)
     params.set('tab', sectionParam[next])
+    setSearchParams(params)
+  }
+  function selectProduction(productionId) {
+    setModal(null)
+    const params = new URLSearchParams(searchParams)
+    params.set('production_id', String(productionId))
+    if (!params.has('tab')) params.set('tab', sectionParam[section])
     setSearchParams(params)
   }
   const query = useQuery({ queryKey: ['case', id, selectedProductionId], queryFn: () => api('/cases/' + id + (selectedProductionId ? `?production_id=${selectedProductionId}` : '')), refetchInterval: print ? false : 15000, refetchOnWindowFocus: !print }),
@@ -51,6 +65,11 @@ export default function CasePage({ user, print = false }) {
     finance = can(user, 'finance')
   const activeAttention = attention && c.lifecycle !== 'Completado'
   const completionBlockers = c.completion_blockers || []
+  function openFinishConfirmation() {
+    setFinishResult(null)
+    setModal({ type: 'confirm_finished', caseId: c.id, productionId: p.id,
+      orderNumber: p.order_number, selectionKey: selectedProductionId })
+  }
   async function changeLifecycle(action) {
     const result = await api(`/cases/${c.id}/${action}`, {
       method: 'POST',
@@ -278,6 +297,9 @@ export default function CasePage({ user, print = false }) {
         <ProductionStages
           record={c}
           canManage={production && c.lifecycle !== 'Completado'}
+          onSelectProduction={selectProduction}
+          onConfirmFinished={openFinishConfirmation}
+          confirmBusy={finishBusy}
           onSchedule={schedule}
           onDelivery={delivery}
           operation={operation}
@@ -350,7 +372,7 @@ export default function CasePage({ user, print = false }) {
                           {i.product} · {quantity(i.quantity)} {i.unit} ·{' '}
                           {money(i.unit_price, q.currency)} / unidad
                         </summary>
-                        <Specifications specs={i.specs} />
+                        <Specifications specs={i.specs} product={i.product} />
                       </details>
                     ))}
                     {q.decision_evidence && <p>{q.decision_evidence}</p>}
@@ -407,11 +429,7 @@ export default function CasePage({ user, print = false }) {
           )}
           {section === 'Producción' && c.production_count > 0 && (
             <Panel title={`Órdenes de producción · ${c.production_count} · ${c.production_pending_count} pendientes`} action={activeAttention && <button className="primary" onClick={() => setModal({ type: 'convert' })}><Plus size={15}/>Agregar orden de producción</button>}>
-              <div className="order-selector" role="list" aria-label="Órdenes de producción">
-                {c.productions.map((order) => <Link role="listitem" key={order.id} className={String(order.id)===String(p?.id)?'order-card active':'order-card'} to={`/cases/${c.id}?production_id=${order.id}&tab=production`}>
-                  <strong>{order.order_number}</strong><span>{order.stage_label || 'Pendiente de clasificación'}</span><span>{order.delivery_status==='Completa'?'Entregada':`Entrega ${order.delivery_status}`}</span><span>{order.committed_date?`Compromiso ${date(order.committed_date)}`:'Sin fecha comprometida'}</span>
-                </Link>)}
-              </div>
+              <p>Orden seleccionada: <strong>{p?.order_number}</strong> · {p?.stage_label || 'Pendiente de clasificación'}</p>
             </Panel>
           )}
           {section === 'Producción' && p && (
@@ -421,13 +439,6 @@ export default function CasePage({ user, print = false }) {
                 Etapa actual: {p.stage_label || 'Pendiente de clasificación'}. Las especificaciones
                 capturadas al generar se conservan como referencia histórica.
               </div>
-              {p.stage === 'WORKSHOP' && (
-                <div className={p.binding_confirmed_at && p.binding_confirmed_cycle === p.workflow_cycle ? 'notice' : 'scanner-pending'}>
-                  {p.binding_confirmed_at && p.binding_confirmed_cycle === p.workflow_cycle
-                    ? `Encuadernación confirmada por ${person(p.binding_confirmed_by_id)} el ${date(p.binding_confirmed_at)}. La liberación depende del grupo de órdenes.`
-                    : 'Pendiente de confirmar encuadernación desde el escáner.'}
-                </div>
-              )}
               {c.items.map((i) => (
                 <article className="quote" key={i.id}>
                   <div className="section-line">
@@ -438,7 +449,7 @@ export default function CasePage({ user, print = false }) {
                     {i.unit_price !== undefined &&
                       ' · ' + money(i.unit_price, p.currency) + ' / unidad'}
                   </p>
-                  <Specifications specs={i.specs} />
+                  <Specifications specs={i.specs} product={i.product} />
                 </article>
               ))}
               <h3>Instrucciones</h3>
@@ -775,6 +786,38 @@ export default function CasePage({ user, print = false }) {
         </aside>
       </div>
       {modal?.type === 'operation' && <Operation {...modal} record={c} onClose={close} />}{' '}
+      {modal?.type === 'confirm_finished' && modal.caseId === c.id &&
+        modal.productionId === p?.id && modal.selectionKey === selectedProductionId && (
+        <FormDialog
+          title="Confirmar trabajo terminado"
+          initial={{}}
+          submit="Confirmar trabajo terminado"
+          busyLabel="Confirmando…"
+          onClose={close}
+          onSave={async () => {
+            setFinishBusy(true)
+            try {
+              const result = await api(`/cases/${modal.caseId}/production/confirm-finished`, {
+                method: 'POST', body: { production_id: modal.productionId },
+              })
+              await Promise.all([
+                qc.invalidateQueries({ queryKey: ['case', String(modal.caseId)] }),
+                qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'case' }),
+              ])
+              setFinishResult(result)
+              return false
+            } finally {
+              setFinishBusy(false)
+            }
+          }}
+          render={() => <p>¿Confirmar que el trabajo de <strong>{modal.orderNumber}</strong> está físicamente terminado?</p>}
+          afterSave={() => <div className="dialog-body" role="status">
+            <p>{finishResult?.message}</p>
+            {finishResult?.pending_orders?.length > 0 && <p>Órdenes pendientes: {finishResult.pending_orders.map((order) => order.order_number).join(', ')}.</p>}
+            <button onClick={close}>Cerrar</button>
+          </div>}
+        />
+      )}
       {modal?.type === 'complete' && (
         <FormDialog
           title="Completar solicitud"

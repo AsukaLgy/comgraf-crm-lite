@@ -20,7 +20,7 @@ export default function PartialReleaseApprovals() {
   }
 
   return <>
-    <div className="page-heading"><div><div className="eyebrow">CONTROL DE ENCUADERNACIÓN</div><h1>Liberaciones parciales</h1><p>Revisa la orden concreta, las órdenes pendientes y el motivo antes de decidir.</p></div></div>
+    <div className="page-heading"><div><div className="eyebrow">CONTROL DE TRABAJO TERMINADO</div><h1>Liberaciones parciales</h1><p>Revisa la orden concreta, las órdenes pendientes y el motivo antes de decidir.</p></div></div>
     {message && <p className="notice" role="status">{message}</p>}
     <ErrorBox error={query.error}/>
     {query.isPending ? <Loading/> : query.data?.length ? query.data.map((request) => <Panel key={request.id} title={`${request.order_number} · Solicitud ${request.case_number}`} action={<Badge tone="amber">Pendiente</Badge>}>

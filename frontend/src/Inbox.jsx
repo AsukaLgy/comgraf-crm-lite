@@ -30,9 +30,9 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
     nav = useNavigate(),
     [modal, setModal] = useState(null),
     [advanced, setAdvanced] = useState(false)
-  const poolView = !search && view === 'pool'
+  const poolView = !home && !search && view === 'pool'
   const orderView = !search && ['production', 'ready'].includes(view)
-  const key = `comgraf.filters.${user.id}.${view}`
+  const key = `comgraf.filters.${user.id}.${home ? 'home' : view}`
   const [filters, setFilters] = useState(() => {
     try {
       const stored = JSON.parse(sessionStorage.getItem(key)) || {}
@@ -50,7 +50,7 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
     }
   })
   const queryText = search ? new URLSearchParams(location.search).get('q') || '' : ''
-  const actionableView = !search && ['action', 'mine-action'].includes(view)
+  const actionableView = home || (!search && ['action', 'mine-action'].includes(view))
   const compatibleFilters = Object.fromEntries(
     Object.entries(filters).filter(([name]) =>
       poolView
@@ -62,7 +62,7 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
   )
   const effective = {
     ...compatibleFilters,
-    view: search ? 'all' : view,
+    view: search ? 'all' : home ? 'action' : view,
     ...(search ? { q: queryText } : {}),
   }
   const list = useQuery({
@@ -139,9 +139,8 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
         )}
       </div>
       {home && (
-        <div className="metrics">
+        <div className="metrics home-metrics">
           {[
-            ['pool', 'Solicitudes sin asignar', 'pool'],
             ['mine', 'Mis solicitudes', 'mine'],
             ['action', 'Requieren acción', 'action'],
             ['ready', 'Listos para entregar', 'ready'],
@@ -194,7 +193,11 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
       <section className="panel inbox">
         <div className="panel-title">
           <div className="tabs" role="group" aria-label="Bandejas de solicitudes">
-            {home || view === 'pool' || view === 'action' ? (
+            {home ? (
+              <Link className="active" to="/inbox/action">
+                Requieren acción <Badge>{counts.data?.action ?? 0}</Badge>
+              </Link>
+            ) : view === 'pool' || view === 'action' ? (
               <>
                 <Link className={view === 'pool' ? 'active' : ''} to="/inbox/pool">
                   Solicitudes sin asignar <Badge>{counts.data?.pool ?? 0}</Badge>
@@ -347,7 +350,7 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
                     `comgraf.filters.${user.id}.${destination}`,
                     JSON.stringify(rest),
                   )
-                  if (destination !== view) nav('/inbox/' + destination)
+                  if (home || destination !== view) nav('/inbox/' + destination)
                 }}
               >
                 {v.name}
@@ -396,7 +399,7 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
                 filters: {
                   ...compatibleFilters,
                   ...(!actionableView && filters.status ? { status: filters.status } : {}),
-                  view,
+                  view: home ? 'action' : view,
                 },
               },
             })

@@ -1,0 +1,7 @@
+.permission-option{display:flex;align-items:flex-start;margin:12px 0;max-width:100%}
+.permission-option input{flex:none;margin-top:3px}
+.permission-option span{display:block;min-width:0}
+.permission-option strong,.permission-option small{display:block}
+.permission-option small{margin-top:3px;color:var(--muted);font-size:11px}
+.role-row span{min-width:0;overflow-wrap:anywhere}
+@media(max-width:650px){.role-row{align-items:flex-start;flex-wrap:wrap}.role-row strong{width:100%}.role-row span{flex-basis:100%}}

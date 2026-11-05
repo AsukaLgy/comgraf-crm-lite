@@ -116,6 +116,9 @@
   outline-offset: -2px;
 }
 
+.home-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media(max-width:800px){.home-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.home-metrics .metric:last-child{grid-column:1/-1}}
+
 @media (max-width: 800px) {
   .sidebar nav {
     scrollbar-width: thin;
@@ -198,6 +201,7 @@ table{font-size:13px}th{font-size:12px;color:#475569}td small{font-size:13px}
 .case-meta,.case-aside p,.key-values,.task,.timeline p,.specs{font-size:13px}
 .event-meta{font-size:13px;color:#526273}.event-meta time{font-size:12px}.system p{font-size:13px;color:#526273}
 .task small,.timeline small,.specs dt{font-size:12px}.production-path li{font-size:12px}.production-controls button{font-size:12px}
+.sidebar > .nav-label{margin-top:32px}
 
 /* Structured CAI work order */
 .cai-fields{grid-column:1/-1;padding:10px 12px;background:#f8fbfa;border:1px solid var(--line);border-radius:6px}

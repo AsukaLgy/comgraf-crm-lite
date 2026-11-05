@@ -3,6 +3,7 @@ import { BrowserQRCodeReader } from '@zxing/browser'
 import { Camera, CheckCircle2, LogOut, RefreshCw, ScanLine, ShieldAlert } from 'lucide-react'
 import { api, date, uid } from './api'
 import { ErrorBox } from './components'
+import Brand from './Brand'
 import './BindingScanner.css'
 
 const QR_FORMAT = /^CGOP1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -136,23 +137,23 @@ export default function BindingScanner({ user, onLogout }) {
   }
 
   const order = outcome?.order
-  const canRequestPartial = order?.confirmed && order.stage === 'WORKSHOP' && !order.blocked && !order.cancelled && !order.delivery_complete && outcome?.pending_orders?.length > 0 && !outcome?.exception_status
+  const canRequestPartial = outcome?.can_request_partial && !outcome?.exception_status
   return (
     <main className="scanner-shell">
       <header className="scanner-header">
-        <div><span className="scanner-mark"><ScanLine size={22}/></span><div><strong>COMGRAF</strong><small>Terminal de encuadernación</small></div></div>
+        <div><Brand size="compact"/><small>Terminal de trabajo terminado</small></div>
         <button type="button" onClick={onLogout}><LogOut size={17}/> Cerrar sesión</button>
       </header>
       <section className="scanner-content">
         <p className="eyebrow">CONFIRMACIÓN DE TRABAJO FÍSICO</p>
-        <h1>Escáner de encuadernación</h1>
+        <h1>Escáner de trabajo terminado</h1>
         <p className="scanner-instruction">Escaneá el QR de la orden terminada.</p>
         <p className="scanner-account">Cuenta activa: <strong>{user.name}</strong>. El sistema registra esta cuenta como autora del escaneo.</p>
         <div className="scanner-camera">
           <video ref={video} muted playsInline aria-label="Vista de la cámara para escanear códigos QR" className={camera === 'active' || camera === 'starting' ? 'visible' : ''}/>
           {camera !== 'active' && <div className="camera-placeholder"><Camera size={34}/><span>{camera === 'starting' ? 'Activando cámara…' : 'La cámara está pausada'}</span></div>}
         </div>
-        <p className="scanner-purpose">Escanear confirma la finalización de encuadernación. No registra una entrega, un pago ni la finalización de la solicitud.</p>
+        <p className="scanner-purpose">Escanear confirma el trabajo físico terminado desde Impresión o Encuadernación. No registra una entrega, un pago ni la finalización de la solicitud.</p>
         <ErrorBox error={cameraError}/>
         {!outcome && camera !== 'active' && <button className="primary scanner-main-button" type="button" disabled={camera === 'starting'} onClick={startCamera}><Camera size={18}/> {camera === 'starting' ? 'Activando cámara…' : 'Activar cámara'}</button>}
         {camera === 'active' && <button className="scanner-main-button" type="button" onClick={stopCamera}>Pausar cámara</button>}

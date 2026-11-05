@@ -123,6 +123,7 @@ export function FormDialog({
   render,
   wide,
   submit = 'Guardar',
+  busyLabel = 'Guardando…',
   canSubmit = true,
   afterSave,
 }) {
@@ -164,7 +165,7 @@ export function FormDialog({
             Cancelar
           </button>
           <button className="primary" disabled={busy || !canSubmit}>
-            {busy ? 'Guardando…' : submit}
+            {busy ? busyLabel : submit}
           </button>
         </footer>
       </form>}

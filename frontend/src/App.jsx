@@ -15,7 +15,6 @@ import {
   ChartNoAxesCombined,
   Search,
   LogOut,
-  Layers,
   ClipboardCheck,
 } from 'lucide-react'
 import { api, can, setTimezone, API_CONTRACT_VERSION, PRODUCT_VERSION } from './api'
@@ -26,6 +25,7 @@ import Clients from './Clients'
 import { Calendar, Indicators } from './Reports'
 import Settings from './Settings'
 import PartialReleaseApprovals from './PartialReleaseApprovals'
+import Brand from './Brand'
 
 const BindingScanner = lazy(() => import('./BindingScanner'))
 
@@ -52,14 +52,7 @@ function Login() {
   return (
     <main className="login-page">
       <div className="login-art">
-        <div className="brand">
-          <span className="brand-mark">
-            <Layers />
-          </span>
-          <span>
-            comgraf<small>COMUNICACIÓN GRÁFICA</small>
-          </span>
-        </div>
+        <div className="brand"><Brand size="login" /></div>
         <div>
           <p className="eyebrow">DEL PRIMER CONTACTO A LA ENTREGA</p>
           <h1>
@@ -168,14 +161,6 @@ export default function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <LinkBrand />
-        <div className="workspace">
-          <span className="workspace-icon">CG</span>
-          <div>
-        <strong>Comgraf</strong>
-            <small>Espacio de trabajo local</small>
-          </div>
-          <span className="online-dot" />
-        </div>
         <p className="nav-label">OPERACIONES</p>
         <nav aria-label="Navegación principal">
           {links.map(([path, label, Icon]) => (
@@ -278,12 +263,7 @@ export default function App() {
 function LinkBrand() {
   return (
     <NavLink className="brand" to="/">
-      <span className="brand-mark">
-        <Layers size={23} />
-      </span>
-      <span>
-        comgraf<small>COMUNICACIÓN GRÁFICA</small>
-      </span>
+      <Brand />
     </NavLink>
   )
 }

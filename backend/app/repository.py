@@ -431,7 +431,10 @@ def _case_projection(db, user, entry, financial):
     result['productions'] = [{'id': order.id, 'order_number': f'OP-{order.id:05d}', 'stage': order.stage,
         'stage_label': STAGE_LABELS.get(order.stage) if order.stage else 'Pendiente de clasificación',
         'committed_date': str(order.committed_date) if order.committed_date else None,
-        'delivery_status': delivery_status(db, case.id, order.id), 'cancelled_at': row(order)['cancelled_at'], 'blocked_since': row(order)['blocked_since']}
+        'delivery_status': delivery_status(db, case.id, order.id), 'cancelled_at': row(order)['cancelled_at'],
+        'blocked_since': row(order)['blocked_since'], 'classification_required': order.classification_required,
+        'workflow_cycle': order.workflow_cycle, 'binding_confirmed_cycle': order.binding_confirmed_cycle,
+        'binding_confirmed_at': row(order)['binding_confirmed_at']}
         for order in orders]
     result['production_count'] = len(orders)
     result['production_pending_count'] = sum(not order.cancelled_at and delivery_status(db, case.id, order.id) != 'Completa' for order in orders)

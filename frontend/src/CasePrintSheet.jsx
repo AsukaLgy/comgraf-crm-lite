@@ -211,7 +211,7 @@ export default function CasePrintSheet({ id, record, person, preview = false }) 
               <h3>
                 {item.product} · {item.quantity} {item.unit}
               </h3>
-              <Specifications specs={item.specs} />
+              <Specifications specs={item.specs} product={item.product} />
             </section>
           ))}
           <h3>Instrucciones</h3>

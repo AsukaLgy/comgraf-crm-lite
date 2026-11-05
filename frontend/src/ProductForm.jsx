@@ -14,11 +14,12 @@ const CAI_FORMATS = [
   {value:'8.5 × 8.5',label:'8.5 × 8.5 pulgadas'},
   {value:'Carta',label:'Carta — 8.5 × 11 pulgadas'},
 ]
+const CAI_DIMENSIONS = Object.fromEntries(CAI_FORMATS.map(({value,label}) => [value, label.split(' — ')[1]?.replace(' pulgadas','') || value]))
 const copyNames = {1: 'Original + 1 copia', 2: 'Original + 2 copias', 3: 'Original + 3 copias'}
 const CAI_BINDINGS = ['Engrapado', 'Pegado', 'Hojas sueltas']
 export const newItem=()=>({product:PRODUCT.BUSINESS_CARDS,quantity:'100',unit:'unidades',unit_price:'0',specs:{measure_unit:'cm'}})
-const SPEC_LABELS={width:'Ancho',height:'Alto',measure_unit:'Unidad de medida',material:'Material / papel',sides:'Caras',inks:'Tintas',copies:'Copias',numbering:'Numeración / rango',sheets:'Hojas',binding:'Encuadernación',cai_binding:'Tipo de encuadernación',finishes:'Acabados',detail:'Especificaciones adicionales'}
-export function Specifications({specs}){return <dl className="specs">{Object.entries(specs||{}).filter(([,v])=>v!==null&&v!=='').map(([k,v])=><div key={k}><dt>{SPEC_LABELS[k]||k}</dt><dd>{v}</dd></div>)}</dl>}
+const SPEC_LABELS={width:'Ancho',height:'Alto',measure_unit:'Unidad de medida',material:'Material / papel',sides:'Caras',inks:'Tintas',copies:'Copias',numbering:'Numeración / rango',sheets:'Hojas',binding:'Encuadernación',finishes:'Acabados',detail:'Especificaciones adicionales',cai_format:'Formato',games_per_pad:'Juegos por talonario',paper_type:'Tipo de papel',additional_copies:'Número de copias',cai_binding:'Tipo de encuadernación'}
+export function Specifications({specs,product}){const cai=product===CAI||Boolean(specs?.cai_format);return <dl className="specs">{Object.entries(specs||{}).filter(([k,v])=>v!==null&&v!==''&&!(cai&&k==='measure_unit')).map(([k,v])=><div key={k}><dt>{SPEC_LABELS[k]||k}</dt><dd>{cai&&k==='cai_format'&&CAI_DIMENSIONS[v]?`${v} (${CAI_DIMENSIONS[v]} pulgadas)`:v}</dd></div>)}</dl>}
 
 function Caispecs({item, set, index}) {
   const specs=item.specs||{}
@@ -27,10 +28,10 @@ function Caispecs({item, set, index}) {
   const games=Number(specs.games_per_pad||0), pads=Number(item.quantity||0), copies=Number(specs.additional_copies||0)
   const totalGames=pads*games, sheets=totalGames*(copies+1)
   return <div className="form-grid cai-fields">
-    <Select label="Formato (pulgadas)" required options={CAI_FORMATS} value={specs.cai_format||''} onChange={e=>update('cai_format',e.target.value)}/>
+    <Select label="Formato" required options={CAI_FORMATS} value={specs.cai_format||''} onChange={e=>update('cai_format',e.target.value)}/>
     <Select label="Juegos por talonario" required options={integerOptions([25,50])} value={specs.games_per_pad==null?'':String(specs.games_per_pad)} onChange={e=>update('games_per_pad',Number(e.target.value))}/>
     <Select label="Tipo de papel" required options={['Bond','Químico']} value={specs.paper_type||''} onChange={e=>update('paper_type',e.target.value)}/>
-    <div><Select label="Copias adicionales al original" required options={integerOptions([1,2,3])} value={specs.additional_copies==null?'':String(specs.additional_copies)} onChange={e=>update('additional_copies',Number(e.target.value))}/><small>{copyNames[copies]||'Selecciona la cantidad de copias.'}</small></div>
+    <div><Select label="Número de copias" required options={integerOptions([1,2,3])} value={specs.additional_copies==null?'':String(specs.additional_copies)} onChange={e=>update('additional_copies',Number(e.target.value))}/><small>1 copia significa original + 1 copia, y así sucesivamente. {copyNames[copies]||''}</small></div>
     <Select label="Tipo de encuadernación" required empty="Seleccionar encuadernación" options={CAI_BINDINGS} value={specs.cai_binding||''} onChange={e=>update('cai_binding',e.target.value)}/>
     <Field label="Cantidad de talonarios" type="number" min="1" step="1" required value={item.quantity} onChange={e=>set(index,'quantity',e.target.value)}/>
     <Field label="Precio por talonario (HNL)" type="number" min="0" step="0.01" required value={item.unit_price} onChange={e=>set(index,'unit_price',e.target.value)}/>

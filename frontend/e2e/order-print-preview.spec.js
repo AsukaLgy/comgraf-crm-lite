@@ -134,12 +134,22 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
     page.getByRole('heading', { name: `Vista previa · ${firstOrder.order_number}` }),
   ).toBeVisible()
 
-  await page
-    .getByRole('list', { name: 'Órdenes de producción' })
-    .getByRole('listitem')
-    .filter({ hasText: secondOrder.order_number })
-    .click()
-  await expect(page).toHaveURL(new RegExp(`production_id=${secondOrder.id}&tab=production`))
+  const orderSelector = page.getByRole('combobox', { name: 'Orden de producción seleccionada' })
+  await expect(orderSelector).toHaveValue(String(firstOrder.id))
+  let delayedSelection = true
+  await page.route((url) => url.pathname === `/api/cases/${record.id}` &&
+    url.searchParams.get('production_id') === String(secondOrder.id), async (route) => {
+    if (delayedSelection) {
+      delayedSelection = false
+      await new Promise((resolve) => setTimeout(resolve, 600))
+    }
+    await route.continue()
+  })
+  await orderSelector.selectOption(String(secondOrder.id))
+  await expect(page.locator('.production-path')).toHaveCount(0)
+  await expect(page.locator('.order-preview-sheet')).toHaveCount(0)
+  await expect(page).toHaveURL(new RegExp(`production_id=${secondOrder.id}`))
+  await expect(orderSelector).toHaveValue(String(secondOrder.id))
   await expect(
     page.getByRole('heading', { name: `Vista previa · ${secondOrder.order_number}` }),
   ).toBeVisible()
@@ -171,6 +181,7 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
   await page.goto(`/cases/${record.id}?production_id=${secondOrder.id}&tab=production`)
   await page.getByRole('button', { name: /^Archivos/ }).click()
   await expect(page.getByRole('button', { name: /^Archivos/ })).toHaveClass(/active/)
+  await expect(orderSelector).toHaveValue(String(secondOrder.id))
   await page.waitForTimeout(16000)
   await expect(page.getByRole('button', { name: /^Archivos/ })).toHaveClass(/active/)
   await page.goBack()
@@ -179,14 +190,18 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
   ).toBeVisible()
   await page.goForward()
   await expect(page.getByRole('button', { name: /^Archivos/ })).toHaveClass(/active/)
+  await expect(orderSelector).toHaveValue(String(secondOrder.id))
 
   await page.goto(`/cases/${record.id}?tab=activity`)
+  await expect(orderSelector).toHaveValue(String(firstOrder.id))
   await page.getByRole('link', { name: `Orden ${firstOrder.order_number}` }).click()
+  await expect(orderSelector).toHaveValue(String(firstOrder.id))
   await expect(
     page.getByRole('heading', { name: `Vista previa · ${firstOrder.order_number}` }),
   ).toBeVisible()
   await page.getByRole('button', { name: 'Actividad', exact: true }).click()
   await page.getByRole('link', { name: `Orden ${secondOrder.order_number}` }).click()
+  await expect(orderSelector).toHaveValue(String(secondOrder.id))
   await expect(
     page.getByRole('heading', { name: `Vista previa · ${secondOrder.order_number}` }),
   ).toBeVisible()
@@ -200,6 +215,14 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
       .locator('.print-sheet')
       .getByRole('img', { name: `QR estable de la orden ${secondOrder.order_number}` }),
   ).toBeVisible()
+  await page.goto(`/cases/${record.id}`)
+  await expect(page.getByRole('button', { name: 'Actividad', exact: true })).toHaveClass(/active/)
+  await expect(orderSelector).toHaveValue(String(firstOrder.id))
+  await orderSelector.selectOption(String(secondOrder.id))
+  await expect(page.getByRole('button', { name: 'Actividad', exact: true })).toHaveClass(/active/)
+  await expect(page).toHaveURL(new RegExp(`production_id=${secondOrder.id}&tab=activity`))
+  await page.goBack()
+  await expect(orderSelector).toHaveValue(String(firstOrder.id))
   await page.goto(`/cases/${record.id}?production_id=999999999&tab=production`)
   await expect(page.getByText('Orden de producción no encontrada en esta solicitud')).toBeVisible()
   await expect(page.locator('.order-preview-sheet')).toHaveCount(0)

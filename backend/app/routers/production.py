@@ -19,6 +19,11 @@ def stage(case_id: int, data: s.StageInput, user=Depends(current_user), db=Depen
     return case_response(db, user, service.change_stage(db, user, case_id, data), data.production_id)
 
 
+@router.post('/cases/{case_id}/production/confirm-finished')
+def confirm_finished(case_id: int, data: s.WorkFinishedInput, user=Depends(current_user), db=Depends(get_db, scope='function')):
+    return service.confirm_finished_manually(db, user, case_id, data.production_id)
+
+
 @router.post('/cases/{case_id}/production/block')
 def block(case_id: int, data: s.ReasonInput, user=Depends(current_user), db=Depends(get_db, scope='function')):
     return case_response(db, user, service.block(db, user, case_id, data), data.production_id)
