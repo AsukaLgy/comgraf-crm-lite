@@ -31,6 +31,7 @@ class Session(Base):
     token_hash = Column(String(64), primary_key=True)
     user_id = Column(ForeignKey('users.id'), nullable=False)
     expires_at = Column(DateTime, nullable=False)
+    generation = Column(String(36), nullable=False, default='', server_default='')
 
 
 class LoginAttempt(Base):
@@ -115,6 +116,7 @@ class Task(Base):
     production_id = Column(ForeignKey('productions.id'), index=True)
     owner_id = Column(ForeignKey('users.id'))
     category = Column(String(20), nullable=False, default='GENERAL', server_default='GENERAL')
+    purpose = Column(String(20), nullable=False, default='ATTENTION', server_default='ATTENTION')
     title = Column(String(500), nullable=False)
     due_at = Column(DateTime, nullable=False, index=True)
     done_at = Column(DateTime)

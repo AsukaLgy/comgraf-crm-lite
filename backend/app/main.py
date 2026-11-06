@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlparse
@@ -42,6 +43,7 @@ async def lifespan(_app):
 
 
 app = FastAPI(title='Comgraf · HTTP interno', docs_url=None, redoc_url=None, lifespan=lifespan)
+app.state.session_generation = os.getenv('COMGRAF_SESSION_GENERATION', 'test-generation')
 
 
 def error_code(status, detail):

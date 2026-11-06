@@ -25,7 +25,7 @@ def main():
                     raise SystemExit('Ya existen usuarios. Administra las cuentas desde Configuración.')
                 username = input('Usuario administrador: ').strip().lower()
                 name = input('Nombre: ').strip()
-                password = getpass.getpass('Contraseña nueva (mínimo 12 caracteres): ')
+                password = getpass.getpass('Contraseña nueva (mínimo 8 caracteres): ')
                 confirmation = getpass.getpass('Repite la contraseña: ')
                 from .schemas import UserInput
                 data = UserInput(username=username, name=name, password=password, roles=['Administrador'])

@@ -21,7 +21,6 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     upload_dir: str = '../uploads'
     static_dir: str = '../frontend/dist'
-    session_hours: int = 12
     product_version: str = '1.4.0'
     build_id: str = 'local-1.4.0'
 

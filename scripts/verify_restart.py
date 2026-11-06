@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import uuid
 import httpx
 import pymysql
 
@@ -17,11 +18,12 @@ env = dict(line.split('=', 1) for line in (root / '.env').read_text().splitlines
 credentials = json.loads((root / '.runtime/e2e.json').read_text())
 base = next((root / '.runtime').glob('mysql-*-winx64'))
 flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-test_env = {**os.environ, 'MYSQL_DATABASE':'comgraf_test','UPLOAD_DIR':'../.runtime/test-uploads'}
 
 
 def start_http():
     log = (root / '.runtime/restart-http.log').open('ab')
+    test_env = {**os.environ, 'MYSQL_DATABASE':'comgraf_test','UPLOAD_DIR':'../.runtime/test-uploads',
+                'COMGRAF_SESSION_GENERATION':str(uuid.uuid4())}
     process = subprocess.Popen([sys.executable, '-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8002'], cwd=root / 'backend', env=test_env, stdout=log, stderr=log, creationflags=flags)
     log.close()
     for _ in range(100):
@@ -61,10 +63,13 @@ mysql = subprocess.Popen([str(base / 'bin/mysqld.exe'), f'--basedir={base}', f'-
 (root / '.runtime/mysql.pid').write_text(str(mysql.pid))
 http = start_http()
 try:
-    # Reuse the same HTTP cookie: sessions must survive restart too.
+    # A new service generation invalidates the existing cookie without touching records.
+    expired = client.get('/api/auth/me')
+    assert expired.status_code == 401 and expired.json()['detail'] == 'El servicio se reinició. Inicia sesión nuevamente'
+    client.post('/api/auth/login', json={k:credentials[k] for k in ('username','password')}).raise_for_status()
     after, after_count = snapshot(client)
     assert before == after and count == after_count
-    result = {'mysql':'8.4.11', 'cases_compared':count, 'same_persistent_state':True, 'session_survived':True, 'sha256':after}
+    result = {'mysql':'8.4.11', 'cases_compared':count, 'same_persistent_state':True, 'session_revoked_on_service_restart':True, 'sha256':after}
     (root / '.runtime/restart-result.json').write_text(json.dumps(result, indent=2))
     print(json.dumps(result, indent=2))
 finally:

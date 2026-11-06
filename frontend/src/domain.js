@@ -40,3 +40,5 @@ export const PRODUCT = Object.freeze({
 export const PRODUCTS = Object.freeze(Object.values(PRODUCT))
 export const PAYMENT_TERMS = Object.freeze(['Contado', 'Crédito'])
 export const HNL_CURRENCY = 'HNL'
+export const PASSWORD_MIN_LENGTH = 8
+export const PASSWORD_MAX_LENGTH = 200

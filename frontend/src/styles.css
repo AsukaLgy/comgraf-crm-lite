@@ -261,3 +261,15 @@ dialog .integrated-create-section>h3{font-size:16px;margin-bottom:12px}
 dialog .integrated-create-section .form-grid{gap:14px}
 dialog .integrated-create-section .autocomplete{min-width:min(100%,280px)}
 @media(max-width:700px){dialog.wide{width:calc(100vw - 16px);max-height:94dvh;padding:14px}dialog .integrated-create-section .form-grid{grid-template-columns:1fr}dialog .integrated-create-section .field{max-width:none;min-width:0}}
+
+/* Identidad local en plantillas de impresión: sin alterar tamaño de página ni área del QR. */
+.cai-print-brand{display:flex;align-items:center;gap:3mm;min-height:17mm;margin-bottom:2mm;color:#07534f;font-size:15pt}
+.cai-print-brand img{width:16mm;height:16mm;object-fit:contain;flex:none}
+.print-brand-lockup{display:flex;align-items:center;gap:5mm}
+.print-brand-lockup img{width:20mm;height:20mm;object-fit:contain;flex:none}
+.print-brand-lockup strong{font-size:15pt;color:#07534f}
+.print-brand-lockup p{font-size:10pt;margin:2mm 0 0}
+.calendar-event.collection_followup,.calendar-event.payment_due{border-color:#a52c37;background:#fff8f8}
+.unscheduled-collections{padding:12px 17px}
+.calendar-event.collection-missing{display:flex;color:inherit;border-color:#a52c37;background:#fff8f8}
+@media print{.print-brand-lockup img{width:18mm;height:18mm}.cai-print-brand{min-height:16mm}.cai-print-brand img{width:15mm;height:15mm}}

@@ -209,12 +209,18 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
   await page.goto(`/cases/${record.id}/print?production_id=${secondOrder.id}`)
   await expect(page.locator('.print-sheet')).toHaveClass(/cai-print/)
   await expect(page.locator('.print-sheet')).toContainText(secondOrder.order_number)
+  await expect(page.locator('.print-sheet')).toContainText('Comunicación Gráfica')
+  await expect(page.locator('.print-sheet>header')).not.toContainText(/comgraf/i)
   await expect(page.locator('.print-sheet')).not.toContainText(firstOrder.order_number)
+  const caiLogo = page.locator('.cai-print-brand img[src="/branding/comgraf-logo.png"]')
+  await expect(caiLogo).toBeVisible()
+  expect(await caiLogo.evaluate((image) => image.naturalWidth)).toBeGreaterThan(10)
   await expect(
     page
       .locator('.print-sheet')
       .getByRole('img', { name: `QR estable de la orden ${secondOrder.order_number}` }),
   ).toBeVisible()
+  await page.screenshot({ path: '../.runtime/qa-print-cai.png', fullPage: true })
   await page.goto(`/cases/${record.id}`)
   await expect(page.getByRole('button', { name: 'Actividad', exact: true })).toHaveClass(/active/)
   await expect(orderSelector).toHaveValue(String(firstOrder.id))

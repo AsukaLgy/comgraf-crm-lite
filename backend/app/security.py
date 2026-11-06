@@ -1,7 +1,8 @@
 import hashlib
 import secrets
+from datetime import timedelta
 from contextlib import contextmanager
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, Response
 from pwdlib import PasswordHash
 from sqlalchemy import select
 from .db import get_db
@@ -20,6 +21,7 @@ DEFAULT_ROLES = {
 }
 PERMISSIONS = sorted({p for values in DEFAULT_ROLES.values() for p in values})
 _PERMISSION_CACHE_KEY = '_comgraf_permission_snapshot'
+SESSION_COOKIE_DAYS = 365
 
 
 def digest(token):
@@ -65,9 +67,11 @@ def require_binding_scanner(db, user):
         raise HTTPException(403, 'Esta operación requiere el rol Escáner de encuadernación')
 
 
-def current_user(request: Request, db=Depends(get_db, scope='function')):
+def current_user(request: Request, response: Response, db=Depends(get_db, scope='function')):
     raw = request.cookies.get('comgraf_session', '')
     session = db.get(Session, digest(raw)) if raw else None
+    if session and session.generation != request.app.state.session_generation:
+        raise HTTPException(401, 'El servicio se reinició. Inicia sesión nuevamente')
     if not session or session.expires_at < now():
         raise HTTPException(401, 'Inicia sesión para continuar')
     user = db.get(User, session.user_id)
@@ -77,6 +81,11 @@ def current_user(request: Request, db=Depends(get_db, scope='function')):
         allowed = request.url.path in {'/api/auth/me', '/api/auth/logout'} or request.url.path.startswith('/api/scanner/')
         if user.roles != ['Escáner de encuadernación'] or not allowed:
             raise HTTPException(403, 'Esta cuenta está limitada a la terminal de escaneo')
+    # The browser keeps a persistent cookie, while this rolling technical expiry
+    # is refreshed on use. Service generation and account revocation are decisive.
+    session.expires_at = now() + timedelta(days=SESSION_COOKIE_DAYS)
+    response.set_cookie('comgraf_session', raw, httponly=True, samesite='strict',
+                        secure=settings.cookie_secure, max_age=SESSION_COOKIE_DAYS * 86400)
     return user
 
 

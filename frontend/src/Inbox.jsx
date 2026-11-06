@@ -91,6 +91,8 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
     queryFn: () => api('/counts'),
     refetchInterval: 30000,
   })
+  const activeOrderFilters = orderView && ['stage', 'due', 'blocked'].some((name) => compatibleFilters[name])
+  const orderGrandTotal = view === 'ready' ? counts.data?.ready_orders ?? 0 : counts.data?.production_orders ?? 0
   const saved = useQuery({ queryKey: ['views'], queryFn: () => api('/views') })
   const clients = useQuery({
     queryKey: ['clients-search', queryText],
@@ -359,6 +361,7 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
             ))}
           </div>
         )}
+        {activeOrderFilters && list.data?.total === 0 && <div className="filters"><p>No hay órdenes con estos filtros.</p><button onClick={() => setFilters({})}>Limpiar filtros</button></div>}
         <ErrorBox error={list.error} />
         {list.isPending ? (
           <Loading />
@@ -367,7 +370,7 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
         )}
         <div className="list-footer">
           <span>
-            {list.data?.total ?? 0} {orderView?'órdenes':'solicitudes'} en esta vista · página {list.data?.page ?? 1} de{' '}
+            {orderView ? activeOrderFilters ? `${list.data?.total ?? 0} resultados de ${orderGrandTotal} órdenes` : `${orderGrandTotal} órdenes en esta bandeja` : `${list.data?.total ?? 0} solicitudes en esta vista`} · página {list.data?.page ?? 1} de{' '}
             {Math.max(1, Math.ceil((list.data?.total ?? 0) / (list.data?.page_size ?? 25)))}
           </span>
           <div className="actions">

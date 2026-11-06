@@ -1,5 +1,6 @@
 """No messaging operation is registered or launched by the application."""
 import pytest
+import os
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
@@ -53,9 +54,14 @@ def test_generic_inputs_only_accept_notes():
 
 def test_start_only_runs_migrations_and_web(monkeypatch):
     calls = []
+    generations = []
     monkeypatch.setattr(start, 'configure_file_logging', lambda *_: None)
     monkeypatch.setattr(start.subprocess, 'run', lambda *args, **kwargs: calls.append(('migrations', args, kwargs)))
-    monkeypatch.setattr(start.uvicorn, 'run', lambda *args, **kwargs: calls.append(('web', args, kwargs)))
+    monkeypatch.setattr(start.uvicorn, 'run', lambda *args, **kwargs: (calls.append(('web', args, kwargs)), generations.append(os.environ['COMGRAF_SESSION_GENERATION'])))
     start.main()
     assert [name for name, *_ in calls] == ['migrations', 'web']
     assert calls[0][1][0][-3:] == ['alembic', 'upgrade', 'head']
+    start.main()
+    assert [name for name, *_ in calls] == ['migrations', 'web', 'migrations', 'web']
+    assert generations[0] != generations[1]
+    assert len(generations[0]) == 36

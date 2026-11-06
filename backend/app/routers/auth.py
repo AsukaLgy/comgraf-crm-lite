@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select, delete
 from ..db import get_db
 from ..models import User, Role, Session, LoginAttempt, now
-from ..schemas import LoginInput, UserInput, UserUpdate, Input
-from ..security import current_user, passwords, digest, require, user_data, DUMMY_HASH, PERMISSIONS
+from ..schemas import LoginInput, UserInput, UserUpdate, PasswordChangeInput, Input
+from ..security import current_user, passwords, digest, require, user_data, DUMMY_HASH, PERMISSIONS, SESSION_COOKIE_DAYS
 from ..config import settings
 
 router = APIRouter(prefix='/api', tags=['Usuarios'])
@@ -30,8 +30,11 @@ def login(data: LoginInput, request: Request, response: Response, db=Depends(get
         raise HTTPException(401, 'Usuario o contraseña incorrectos')
     if attempt: db.delete(attempt)
     token = secrets.token_urlsafe(48)
-    db.add(Session(token_hash=digest(token), user_id=user.id, expires_at=now() + timedelta(hours=settings.session_hours)))
-    response.set_cookie('comgraf_session', token, httponly=True, samesite='strict', secure=settings.cookie_secure, max_age=settings.session_hours * 3600)
+    generation = request.app.state.session_generation
+    db.add(Session(token_hash=digest(token), user_id=user.id,
+                   expires_at=now() + timedelta(days=SESSION_COOKIE_DAYS), generation=generation))
+    response.set_cookie('comgraf_session', token, httponly=True, samesite='strict',
+                        secure=settings.cookie_secure, max_age=SESSION_COOKIE_DAYS * 86400)
     return user_data(db, user)
 
 
@@ -84,14 +87,8 @@ def update_user(user_id: int, data: UserUpdate, user=Depends(current_user), db=D
     return user_data(db, target)
 
 
-class PasswordInput(Input):
-    current_password: str
-    new_password: str
-
-
 @router.post('/auth/password')
-def change_password(data: PasswordInput, user=Depends(current_user), db=Depends(get_db, scope='function')):
-    if len(data.new_password) < 12 or len(data.new_password) > 200: raise HTTPException(422, 'Usa entre 12 y 200 caracteres')
+def change_password(data: PasswordChangeInput, user=Depends(current_user), db=Depends(get_db, scope='function')):
     if not passwords.verify(data.current_password, user.password_hash): raise HTTPException(403, 'Contraseña actual incorrecta')
     user.password_hash = passwords.hash(data.new_password)
     db.execute(delete(Session).where(Session.user_id == user.id))

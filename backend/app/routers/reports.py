@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from ..db import get_db
 from ..models import Case, Client, Item, Production, Task, Event, Quote, Delivery, now
-from ..security import current_user, require
+from ..security import current_user, require, can
 from ..repository import visibility, balance, row, delivery_status, local_day
 from ..schemas import STAGE_LABELS
 
@@ -19,24 +19,65 @@ def calendar(user=Depends(current_user), db=Depends(get_db, scope='function')):
         label = f'CG-{case.id:06d} · {client.name if client else case.subject}'
         for task in db.scalars(select(Task).where(Task.case_id == case.id, Task.done_at.is_(None))):
             order = db.get(Production, task.production_id) if task.production_id else None
+            collection = task.purpose == 'COLLECTION'
+            if collection and not (can(db, user, 'finance') or can(db, user, 'attention')):
+                continue
+            event_type = 'Seguimiento de cobro' if collection else 'Seguimiento de atención'
             events.append({'id': f't{task.id}', 'case_id': case.id, 'production_id': order.id if order else None,
-                'type': 'Seguimiento de atención', 'event_kind': 'followup', 'date': row(task)['due_at'],
+                'type': event_type, 'event_kind': 'collection_followup' if collection else 'followup', 'date': row(task)['due_at'],
                 'title': f'{label}{f" · OP-{order.id:05d}" if order else ""} · {task.title}',
                 'order_number': f'OP-{order.id:05d}' if order else None,
-                'stage': STAGE_LABELS.get(order.stage) if order and order.stage else None, 'owner_id': task.owner_id})
+                'action': task.title, 'date_label': 'Cobro programado el' if collection else 'Contactar el',
+                'stage': STAGE_LABELS.get(order.stage) if order and order.stage else None,
+                'state_label': 'Pendiente', 'owner_id': task.owner_id})
         for production in db.scalars(select(Production).where(Production.case_id == case.id).order_by(Production.id)):
-            if production.cancelled_at or delivery_status(db, case.id, production.id) == 'Completa': continue
+            status = delivery_status(db, case.id, production.id)
+            if production.cancelled_at: continue
             order_number = f'OP-{production.id:05d}'
             stage = STAGE_LABELS.get(production.stage) if production.stage else 'Pendiente de clasificación'
             order_context = f'{label} · {order_number}'
-            if production.scheduled_at: events.append({'id': f'p{production.id}', 'case_id': case.id, 'production_id': production.id,
-                'type': 'Inicio programado de producción', 'event_kind': 'scheduled', 'date': row(production)['scheduled_at'],
-                'title': order_context, 'order_number': order_number, 'stage': stage, 'stage_label': stage, 'owner_id': case.owner_id})
-            if production.committed_date: events.append({'id': f'd{production.id}', 'case_id': case.id, 'production_id': production.id,
+            if status != 'Completa' and production.stage in (None, 'NEW', 'APPROVAL') and production.scheduled_at:
+                events.append({'id': f'p{production.id}', 'case_id': case.id, 'production_id': production.id,
+                    'type': 'Inicio programado de producción', 'event_kind': 'scheduled', 'date': row(production)['scheduled_at'],
+                    'date_label': 'Producción programada el', 'action': 'Iniciar producción', 'state_label': stage,
+                    'title': order_context, 'order_number': order_number, 'stage': stage, 'stage_label': stage, 'owner_id': case.owner_id})
+            if status != 'Completa' and production.committed_date:
+                events.append({'id': f'd{production.id}', 'case_id': case.id, 'production_id': production.id,
                 'type': 'Entrega comprometida', 'event_kind': 'committed', 'date': str(production.committed_date),
-                'title': order_context, 'order_number': order_number,
-                'stage': stage, 'stage_label': stage, 'original': str(production.original_committed_date) if production.original_committed_date else None})
+                'date_label': 'Entrega comprometida para', 'action': 'Completar y liberar la orden',
+                'title': order_context, 'order_number': order_number, 'stage': stage, 'stage_label': stage,
+                'state_label': 'Bloqueada · ' + production.block_reason if production.blocked_since else stage,
+                'original': str(production.original_committed_date) if production.original_committed_date else None})
+            order_balance = balance(db, case.id, production.id)['balance']
+            if (can(db, user, 'finance') or can(db, user, 'attention')) and order_balance is not None and Decimal(order_balance) > 0 and production.payment_due_date:
+                events.append({'id': f'm{production.id}', 'case_id': case.id, 'production_id': production.id,
+                    'type': 'Vencimiento de pago', 'event_kind': 'payment_due', 'date': str(production.payment_due_date),
+                    'date_label': 'Pago vence el', 'action': 'Revisar saldo pendiente', 'title': order_context,
+                    'order_number': order_number, 'stage': stage,
+                    'state_label': 'Entregada · saldo pendiente' if status == 'Completa' else 'Saldo pendiente'})
     return sorted(events, key=lambda e: e['date'])
+
+
+@router.get('/calendar/unscheduled-collections')
+def unscheduled_collections(user=Depends(current_user), db=Depends(get_db, scope='function')):
+    if not (can(db, user, 'finance') or can(db, user, 'attention')):
+        return []
+    pending = []
+    for case in db.scalars(select(Case).where(visibility(db, user))):
+        client = db.get(Client, case.client_id)
+        for production in db.scalars(select(Production).where(Production.case_id == case.id, Production.cancelled_at.is_(None))):
+            order_balance = balance(db, case.id, production.id)['balance']
+            if order_balance is None or Decimal(order_balance) <= 0:
+                continue
+            scheduled = db.scalar(select(Task.id).where(Task.case_id == case.id, Task.production_id == production.id,
+                Task.purpose == 'COLLECTION', Task.done_at.is_(None)).limit(1))
+            if scheduled:
+                continue
+            pending.append({'id': production.id, 'case_id': case.id, 'case_number': f'CG-{case.id:06d}',
+                'client': client.name if client else case.subject, 'order_number': f'OP-{production.id:05d}',
+                'title': production.payment_terms, 'status_label': 'Falta programar el seguimiento de cobro',
+                'delivered': delivery_status(db, case.id, production.id) == 'Completa'})
+    return pending
 
 
 @router.get('/indicators')

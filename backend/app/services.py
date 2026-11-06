@@ -221,13 +221,22 @@ def add_event(db, user, case_id, data):
 
 
 def add_task(db, user, case_id, data):
-    case, changed = mutation(db, user, case_id, data, 'task', 'attention')
+    permission = 'finance' if data.purpose == 'COLLECTION' else 'attention'
+    case, changed = mutation(db, user, case_id, data, 'task', permission)
     if not changed: return case
-    active_user(db, data.owner_id, 'attention')
-    db.add(Task(case_id=case.id, owner_id=data.owner_id, title=data.title, due_at=data.due_at))
-    case.next_action = data.title
-    event(db, case, user, f'Seguimiento programado: {data.title}', data={'due_at': data.due_at.isoformat() + 'Z', 'owner_id': data.owner_id})
-    if data.due_at <= now() and case.status == 'Cerrado':
+    active_user(db, data.owner_id, permission)
+    production = get_production(db, case, data.production_id) if data.purpose == 'COLLECTION' else None
+    if data.purpose == 'COLLECTION':
+        outstanding = balance(db, case.id, production.id)['balance']
+        if outstanding is None or Decimal(outstanding) <= 0:
+            fail('La orden no tiene un saldo pendiente verificable para programar un seguimiento de cobro')
+    db.add(Task(case_id=case.id, production_id=production.id if production else None,
+                owner_id=data.owner_id, purpose=data.purpose, title=data.title, due_at=data.due_at))
+    if data.purpose == 'ATTENTION': case.next_action = data.title
+    event(db, case, user, f"{'Seguimiento de cobro' if data.purpose == 'COLLECTION' else 'Seguimiento de atención'} programado: {data.title}",
+          data={'due_at': data.due_at.isoformat() + 'Z', 'owner_id': data.owner_id,
+                'purpose': data.purpose, 'production_id': production.id if production else None})
+    if data.purpose == 'ATTENTION' and data.due_at <= now() and case.status == 'Cerrado':
         old = case.status
         case.status = 'Abierto'
         event(db, case, user, 'Atención abierta automáticamente por un seguimiento vencido', data={'action': 'attention_status', 'from': old, 'to': 'Abierto', 'origin': 'automatic'})
@@ -248,7 +257,8 @@ def schedule_pickup_followup(db, case, user, production_id=None, due_at=None):
 
 
 def complete_task(db, user, case_id, task_id, data):
-    case, changed = mutation(db, user, case_id, data, f'task:{task_id}', 'attention')
+    permission = task_permission(db, user, case_id, task_id)
+    case, changed = mutation(db, user, case_id, data, f'task:{task_id}', permission)
     if not changed: return case
     task = db.get(Task, task_id)
     if not task or task.case_id != case_id: fail('Seguimiento no encontrado', 404)
@@ -270,8 +280,16 @@ def complete_task(db, user, case_id, task_id, data):
     return case
 
 
+def task_permission(db, user, case_id, task_id):
+    case = get_case(db, user, case_id)
+    task = db.get(Task, task_id)
+    if not task or task.case_id != case.id: fail('Seguimiento no encontrado', 404)
+    return 'finance' if task.purpose == 'COLLECTION' else 'attention'
+
+
 def reschedule_task(db, user, case_id, task_id, data):
-    case, changed = mutation(db, user, case_id, data, f'task_reschedule:{task_id}', 'attention')
+    permission = task_permission(db, user, case_id, task_id)
+    case, changed = mutation(db, user, case_id, data, f'task_reschedule:{task_id}', permission)
     if not changed: return case
     task = db.get(Task, task_id)
     if not task or task.case_id != case_id: fail('Seguimiento no encontrado', 404)
@@ -279,7 +297,7 @@ def reschedule_task(db, user, case_id, task_id, data):
     previous = task.due_at
     task.due_at = data.due_at
     event(db, case, user, f'Seguimiento reprogramado: {task.title}', data={'action': 'task_rescheduled', 'task_id': task.id, 'previous_due_at': previous.isoformat() + 'Z', 'due_at': data.due_at.isoformat() + 'Z'})
-    if data.due_at <= now() and case.status == 'Cerrado':
+    if task.purpose == 'ATTENTION' and data.due_at <= now() and case.status == 'Cerrado':
         old = case.status
         case.status = 'Abierto'
         event(db, case, user, 'Atención abierta automáticamente por un seguimiento vencido', data={'action': 'attention_status', 'from': old, 'to': 'Abierto', 'origin': 'automatic'})
@@ -291,7 +309,7 @@ def reopen_overdue_attention(db):
     due_cases = db.scalars(select(Case).where(
         Case.status == 'Cerrado',
         Case.lifecycle == 'Activo',
-        select(Task.id).where(Task.case_id == Case.id, Task.done_at.is_(None), Task.due_at <= now()).exists(),
+        select(Task.id).where(Task.case_id == Case.id, Task.purpose == 'ATTENTION', Task.done_at.is_(None), Task.due_at <= now()).exists(),
     ).with_for_update()).all()
     for case in due_cases:
         case.status = 'Abierto'
@@ -986,6 +1004,8 @@ def pay(db, user, case_id, data):
     production = get_production(db, case, data.production_id)
     if production.currency != CURRENCY_HNL: fail('Esta orden histórica está en USD. No registres el abono como lempiras; requiere revisión explícita de moneda.', 409)
     db.add(Ledger(case_id=case.id, production_id=production.id, kind=data.kind, amount=-data.amount, currency=production.currency, reference=data.reference, actor_id=user.id))
+    db.flush()
+    resolve_paid_collection_followups(db, case, production, user)
     event(db, case, user, f'{data.kind} OP-{production.id:05d}: {data.amount} {production.currency}. {data.reference}', data={'financial': True, 'action': 'payment', 'production_id': production.id})
     complete_resolved_production(db, case, user, 'payment_recorded')
     return case
@@ -998,9 +1018,30 @@ def adjust(db, user, case_id, data):
     if not data.amount: fail('El ajuste requiere un importe distinto de cero')
     if production.currency != CURRENCY_HNL: fail('Esta orden histórica está en USD y requiere revisión explícita de moneda.', 409)
     db.add(Ledger(case_id=case.id, production_id=production.id, kind='Ajuste', amount=data.amount, currency=production.currency, due_date=data.due_date, reference='Ajuste autorizado', reason=data.reason, actor_id=user.id))
+    db.flush()
+    resolve_paid_collection_followups(db, case, production, user)
     event(db, case, user, f'Ajuste OP-{production.id:05d}: {data.amount} {production.currency}. {data.reason}', data={'financial': True, 'production_id': production.id})
     complete_resolved_production(db, case, user, 'financial_adjustment')
     return case
+
+
+def resolve_paid_collection_followups(db, case, production, user):
+    outstanding = balance(db, case.id, production.id)['balance']
+    if outstanding is None or Decimal(outstanding) > 0:
+        return 0
+    tasks = db.scalars(select(Task).where(
+        Task.case_id == case.id, Task.production_id == production.id,
+        Task.purpose == 'COLLECTION', Task.done_at.is_(None),
+    ).with_for_update()).all()
+    if not tasks:
+        return 0
+    closed_at = now()
+    for task in tasks:
+        task.done_at = closed_at
+    event(db, case, user, f'Seguimientos de cobro resueltos al quedar pagada OP-{production.id:05d}',
+          data={'action': 'collection_followups_resolved', 'production_id': production.id,
+                'task_ids': [task.id for task in tasks], 'origin': 'automatic'})
+    return len(tasks)
 
 
 def reverse_payment(db, user, case_id, entry_id, data):

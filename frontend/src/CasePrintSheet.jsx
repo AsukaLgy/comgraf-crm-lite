@@ -50,8 +50,9 @@ export default function CasePrintSheet({ id, record, person, preview = false }) 
         </div>}
         <header className="cai-print-header">
           <div className="cai-print-heading">
-            <div className="brand-name">
-              Comgraf <small>| Comunicación Gráfica</small>
+            <div className="cai-print-brand">
+              <img src="/branding/comgraf-logo.png" alt="" />
+              <strong>Comunicación Gráfica</strong>
             </div>
             <div className="cai-header-id">
               <strong>{production.order_number}</strong>
@@ -60,7 +61,7 @@ export default function CasePrintSheet({ id, record, person, preview = false }) 
             <h1>Orden de producción — Talonarios de factura CAI</h1>
             <div className="cai-meta">
               <span>
-                <b>Creada:</b> {date(production.created_at)} · {person(production.created_by_id)}
+                <b>Creada:</b> {date(production.created_at)}
               </span>
               {production.committed_date && (
                 <span>
@@ -178,9 +179,9 @@ export default function CasePrintSheet({ id, record, person, preview = false }) 
         </Link>
       </div>}
       <header>
-        <div>
-          <div className="brand-name">COMGRAF</div>
-          <p>Comunicación Gráfica · Orden de producción</p>
+        <div className="print-brand-lockup">
+          <img src="/branding/comgraf-logo.png" alt="" />
+          <div><strong>Comunicación Gráfica</strong><p>Orden de producción</p></div>
         </div>
         <h1>
           {record.number}

@@ -607,7 +607,7 @@ export default function CasePage({ user, print = false }) {
           <Panel
             title="Próxima acción"
             action={
-              activeAttention && (
+              (activeAttention || (finance && p && Number(c.balance) > 0)) && (
                 <button
                   className="icon-button"
                   aria-label="Programar seguimiento"
@@ -617,21 +617,15 @@ export default function CasePage({ user, print = false }) {
                       'Programar seguimiento',
                       [
                         { name: 'title', label: 'Acción a realizar', required: true },
-                        {
-                          name: 'owner_id',
-                          label: 'Responsable',
-                          options: personOptions('attention'),
-                          required: true,
-                        },
-                        {
-                          name: 'due_at',
-                          label: `Fecha y hora (${timezone})`,
-                          type: 'datetime-local',
-                          required: true,
-                        },
+                        ...(finance ? [{ name: 'purpose', label: 'Propósito', options: [
+                          { value: 'ATTENTION', label: 'Seguimiento de atención' },
+                          { value: 'COLLECTION', label: 'Seguimiento de cobro' },
+                        ] }] : []),
+                        { name: 'owner_id', label: 'Responsable', options: (values) => personOptions(values.purpose === 'COLLECTION' ? 'finance' : 'attention'), required: true },
+                        { name: 'due_at', label: `Fecha y hora (${timezone})`, type: 'datetime-local', required: true },
                       ],
-                      { owner_id: user.id },
-                      (v) => ({ ...v, owner_id: Number(v.owner_id), due_at: toUTC(v.due_at) }),
+                      { owner_id: user.id, purpose: finance && !can(user, 'attention') ? 'COLLECTION' : 'ATTENTION' },
+                      (v) => ({ ...v, owner_id: Number(v.owner_id), due_at: toUTC(v.due_at), production_id: v.purpose === 'COLLECTION' ? p?.id : undefined }),
                     )
                   }
                 >
@@ -644,6 +638,7 @@ export default function CasePage({ user, print = false }) {
             {c.tasks.map((t) => (
               <div className="task" key={t.id}>
                 <strong>{t.title}</strong>
+                <Badge>{t.purpose === 'COLLECTION' ? 'Seguimiento de cobro' : 'Seguimiento de atención'}</Badge>
                 <small>
                   {date(t.due_at)} · {person(t.owner_id)}
                 </small>
@@ -652,7 +647,7 @@ export default function CasePage({ user, print = false }) {
                 ) : (
                   <>
                     {new Date(t.due_at) < new Date() && <Badge tone="red">Vencido</Badge>}
-                    {activeAttention && (
+                    {(t.purpose === 'COLLECTION' ? finance : activeAttention) && (
                       <>
                         <button
                           onClick={() =>

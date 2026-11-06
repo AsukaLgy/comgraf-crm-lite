@@ -29,11 +29,11 @@ import Brand from './Brand'
 
 const BindingScanner = lazy(() => import('./BindingScanner'))
 
-function Login() {
+function Login({ sessionMessage = '' }) {
   const qc = useQueryClient(),
     [username, setUsername] = useState(''),
     [password, setPassword] = useState(''),
-    [error, setError] = useState(null),
+    [error, setError] = useState(() => sessionMessage ? new Error(sessionMessage) : null),
     [busy, setBusy] = useState(false)
   async function submit(e) {
     e.preventDefault()
@@ -122,7 +122,7 @@ export default function App() {
   }, [me.data?.timezone])
   if (me.isPending) return <Loading />
   if (me.error) {
-    if (me.error.status === 401) return <Login />
+    if (me.error.status === 401) return <Login sessionMessage={me.error.message.includes('servicio se reinició') ? me.error.message : ''} />
     return (
       <>
         <ErrorBox error={me.error} />

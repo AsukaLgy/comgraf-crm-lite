@@ -115,7 +115,7 @@ def delivery_status(db, case_id, production_id=None):
 
 
 def attention_predicates():
-    overdue_task = select(Task.id).where(Task.case_id == Case.id, Task.done_at.is_(None), Task.due_at <= now()).correlate(Case).exists()
+    overdue_task = select(Task.id).where(Task.case_id == Case.id, Task.purpose == 'ATTENTION', Task.done_at.is_(None), Task.due_at <= now()).correlate(Case).exists()
     pending_task = select(Task.id).where(Task.case_id == Case.id, Task.done_at.is_(None)).correlate(Case).exists()
     has_delivery = select(Delivery.id).where(Delivery.case_id == Case.id).correlate(Case).exists()
     short_item = select(Item.id).where(
@@ -144,6 +144,27 @@ def attention_predicates():
         'requires_action': requires_action,
         'pending_assignment': pending_assignment,
     }
+
+
+def order_item_predicates():
+    """Shared item-completion rules used by production and ready-order inboxes."""
+    has_item = select(Item.id).where(Item.production_id == Production.id).correlate(Production).exists()
+    remaining_item = select(Item.id).where(
+        Item.production_id == Production.id,
+        func.coalesce(select(func.sum(Delivery.quantity)).where(Delivery.item_id == Item.id).correlate(Item).scalar_subquery(), 0) < Item.quantity,
+    ).correlate(Production).exists()
+    complete = and_(has_item, not_(remaining_item))
+    return has_item, remaining_item, complete
+
+
+def ready_order_predicate():
+    """One authoritative definition for READY list rows and counts."""
+    has_item, _remaining_item, complete = order_item_predicates()
+    return and_(
+        Case.lifecycle == 'Activo', Production.cancelled_at.is_(None),
+        Production.stage == 'READY', Production.classification_required.is_(False),
+        Production.blocked_since.is_(None), has_item, not_(complete),
+    )
 
 
 def financial_expressions():
@@ -352,11 +373,11 @@ def case_query(db, user, filters):
     predicates = attention_predicates()
     total, overdue, payment, has_debt, has_credit, has_overdue = financial_expressions()
     delivery_state = sql_case((predicates['complete_delivery'], 'Completa'), (predicates['has_delivery'], 'Parcial'), else_='Pendiente')
+    _has_order_item, _order_item_remaining, order_complete = order_item_predicates()
     unfinished_order = select(Production.id).where(
         Production.case_id == Case.id, Production.cancelled_at.is_(None),
-        select(Item.id).where(Item.production_id == Production.id,
-            func.coalesce(select(func.sum(Delivery.quantity)).where(Delivery.item_id == Item.id).correlate(Item).scalar_subquery(), 0) < Item.quantity,
-        ).correlate(Production).exists(),
+        or_(Production.stage.is_(None), Production.stage != 'READY'),
+        not_(order_complete),
     ).correlate(Case).exists()
     latest_id = select(func.max(Production.id)).where(Production.case_id == Case.id).correlate(Case).scalar_subquery()
     latest_production = aliased(Production)
@@ -374,7 +395,7 @@ def case_query(db, user, filters):
     elif view == 'mine': query = query.where(Case.owner_id == user.id, Case.lifecycle == 'Activo')
     elif view == 'mine-action': query = query.where(Case.owner_id == user.id, predicates['requires_action'])
     elif view == 'production': query = query.where(unfinished_order)
-    elif view == 'ready': query = query.where(select(Production.id).where(Production.case_id == Case.id, Production.stage == 'READY', Production.classification_required.is_(False), Production.cancelled_at.is_(None)).exists())
+    elif view == 'ready': query = query.where(select(Production.id).where(Production.case_id == Case.id, ready_order_predicate()).exists())
     elif view == 'balances': query = query.where(has_debt, not_(predicates['cancellation_review']))
     elif view == 'refunds': query = query.where(has_credit)
     elif view == 'cancellation-review': query = query.where(predicates['cancellation_review'])
@@ -486,24 +507,23 @@ def cases_list(db, user, filters, *, paginated=True):
 
 def case_counts(db, user):
     with cached_permissions(db, user):
-        views = ['pool', 'action', 'mine', 'mine-action', 'production', 'ready', 'history', 'finalized']
+        views = ['pool', 'action', 'mine', 'mine-action', 'production', 'history', 'finalized']
         if can(db, user, 'finance') or can(db, user, 'attention'):
             views += ['balances', 'overdue', 'refunds', 'cancellation-review']
         result = {view: db.scalar(select(func.count()).select_from(case_query(db, user, {'view': view}).order_by(None).subquery())) or 0 for view in views}
         result['production_orders'] = orders_count(db, user, 'production')
         result['ready_orders'] = orders_count(db, user, 'ready')
+        result['ready'] = result['ready_orders']
         return result
 
 
 def _order_query(db, user, view, filters=None):
     filters = filters or {}
-    has_item = select(Item.id).where(Item.production_id == Production.id).correlate(Production).exists()
-    short_item = select(Item.id).where(Item.production_id == Production.id,
-        func.coalesce(select(func.sum(Delivery.quantity)).where(Delivery.item_id == Item.id).correlate(Item).scalar_subquery(), 0) < Item.quantity).correlate(Production).exists()
-    complete = and_(has_item, not_(short_item))
+    _has_item, _remaining_item, complete = order_item_predicates()
     query = select(Production, Case, Client).join(Case, Case.id == Production.case_id).join(Client, Client.id == Case.client_id).where(
         visibility(db, user), Case.lifecycle == 'Activo', Production.cancelled_at.is_(None), not_(complete))
-    if view == 'ready': query = query.where(Production.stage == 'READY', Production.classification_required.is_(False), Production.blocked_since.is_(None))
+    if view == 'ready': query = query.where(ready_order_predicate())
+    elif view == 'production': query = query.where(or_(Production.stage.is_(None), Production.stage != 'READY'))
     elif view != 'production': raise HTTPException(422, 'Bandeja de órdenes no reconocida')
     if filters.get('stage'): query = query.where(Production.stage == filters['stage'])
     if filters.get('due'):

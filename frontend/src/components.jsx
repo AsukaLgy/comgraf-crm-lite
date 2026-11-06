@@ -230,7 +230,7 @@ export function Operation({
                   <Select
                     key={f.name}
                     label={f.label}
-                    options={f.options}
+                    options={typeof f.options === 'function' ? f.options(v) : f.options}
                     empty={f.empty}
                     value={v[f.name]}
                     required={typeof f.required === 'function' ? f.required(v) : f.required}

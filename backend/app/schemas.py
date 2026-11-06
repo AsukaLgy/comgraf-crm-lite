@@ -2,6 +2,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
+from .password_policy import PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH
 
 Money = Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
 Quantity = Annotated[Decimal, Field(gt=0, max_digits=14, decimal_places=3)]
@@ -53,7 +54,7 @@ class LoginInput(Input):
 class UserInput(Input):
     username: str = Field(min_length=3, max_length=80, pattern=r'^[a-zA-Z0-9_.-]+$')
     name: str = Field(min_length=2, max_length=160)
-    password: str = Field(min_length=12, max_length=200)
+    password: str = Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
     roles: list[str] = Field(min_length=1, max_length=10)
     capacity: int = Field(default=20, ge=1, le=500)
 
@@ -63,7 +64,7 @@ class UserUpdate(Input):
     roles: list[str] = Field(min_length=1, max_length=10)
     active: bool
     capacity: int = Field(ge=1, le=500)
-    password: str | None = Field(default=None, min_length=12, max_length=200)
+    password: str | None = Field(default=None, min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
 
 
 class ContactInput(Input):
@@ -148,6 +149,7 @@ class TaskInput(Mutation):
     title: str = Field(min_length=1, max_length=500)
     owner_id: int
     due_at: datetime
+    purpose: Literal['ATTENTION', 'COLLECTION'] = 'ATTENTION'
 
     @field_validator('due_at')
     @classmethod
@@ -160,6 +162,11 @@ class TaskInput(Mutation):
 class TaskCompletionInput(Mutation):
     note: str = Field(default='', max_length=20000)
     schedule_next_pickup: bool = False
+
+
+class PasswordChangeInput(Input):
+    current_password: str = Field(min_length=1, max_length=PASSWORD_MAX_LENGTH)
+    new_password: str = Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
 
 
 class CaseLifecycleInput(Mutation):

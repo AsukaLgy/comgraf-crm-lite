@@ -7,7 +7,7 @@ from sqlalchemy import select, func, event as sqlalchemy_event
 from app.main import app
 from app.db import engine, SessionLocal
 from app.config import settings
-from app.models import Case, Production, Ledger, Item, Quote, Task, Role, User, Event, Delivery, SavedView
+from app.models import Case, Production, Ledger, Item, Quote, Task, Role, User, Event, Delivery, SavedView, Session
 from app.repository import today
 from app.services import reopen_overdue_attention, historical_completion_candidates, regularize_historical_completions
 
@@ -66,6 +66,129 @@ def test_creation_context_assigns_only_personal_requests(clients, accounts):
     assert api.post('/api/cases', json={'client_id': customer['id'], 'subject': 'Propietario arbitrario', 'kind': 'Solicitud', 'creation_context': 'personal', 'owner_id': accounts['agent']['id']}).status_code == 422
     assert must(api.get('/api/cases', params={'view': 'pool'}))['total'] == 1
     assert must(api.get('/api/cases', params={'view': 'mine'}))['total'] == 1
+
+
+def test_production_and_ready_queues_share_order_scope_and_count_rules(clients):
+    api = clients['admin']
+    _, case = create(api, 'Bandejas por OP')
+    case = mutate(api, case, 'take')
+    orders = []
+    for _ in range(3):
+        case = mutate(api, case, 'convert', conversion())
+        orders.append(case['production']['id'])
+    with SessionLocal.begin() as db:
+        db.get(Production, orders[0]).stage = 'PRINTING'
+        db.get(Production, orders[1]).stage = 'READY'
+        db.get(Production, orders[2]).stage = 'READY'
+        item_row = db.scalar(select(Item).where(Item.production_id == orders[2]))
+        db.add(Delivery(case_id=case['id'], item_id=item_row.id, quantity=item_row.quantity,
+                        delivered_at=datetime.now(timezone.utc).replace(tzinfo=None), receiver='Cliente',
+                        method='Entrega (delivery)', evidence='Historial completo', actor_id=case['owner_id']))
+    ready = must(api.get('/api/orders?view=ready'))
+    production = must(api.get('/api/orders?view=production'))
+    counts = must(api.get('/api/counts'))
+    assert ready['total'] == 1 and [order['id'] for order in ready['items']] == [orders[1]]
+    assert production['total'] == 1 and [order['id'] for order in production['items']] == [orders[0]]
+    assert counts['ready_orders'] == counts['ready'] == 1
+    assert counts['production_orders'] == 1
+    assert must(api.get('/api/cases?view=balances'))['total'] == 1
+    # A blocked order still in active production remains listed and is explicitly marked.
+    case = mutate(api, case, 'production/block', {'production_id': orders[0], 'reason': 'Falta material'})
+    production = must(api.get('/api/orders?view=production'))
+    assert production['total'] == counts['production_orders'] == 1
+    assert production['items'][0]['blocked_since'] and production['items'][0]['block_reason'] == 'Falta material'
+    assert must(api.get('/api/orders?view=ready'))['total'] == must(api.get('/api/counts'))['ready_orders'] == 1
+
+
+def test_calendar_distinguishes_schedules_debt_and_independent_attention(clients, accounts):
+    api = clients['admin']
+    _, case = create(api, 'Agenda con entrega y saldo')
+    case = mutate(api, case, 'take')
+    case = mutate(api, case, 'convert', conversion())
+    order_id = case['production']['id']
+    scheduled_at = datetime.now(timezone.utc) + timedelta(days=1)
+    case = mutate(api, case, 'production/schedule', {'scheduled_at': scheduled_at.isoformat(),
+                                                       'committed_date': str(today() + timedelta(days=3))})
+    events = must(api.get('/api/calendar'))
+    assert {event['type'] for event in events} == {
+        'Inicio programado de producción', 'Entrega comprometida', 'Vencimiento de pago'}
+    payment_due = next(event for event in events if event['type'] == 'Vencimiento de pago')
+    assert payment_due['date'] == str(today() - timedelta(days=1))
+    assert payment_due['date_label'] == 'Pago vence el' and payment_due['order_number'] == f'OP-{order_id:05d}'
+    assert payment_due['date'].count('T') == 0
+    missing = must(api.get('/api/calendar/unscheduled-collections'))
+    assert [row['id'] for row in missing] == [order_id]
+    case = release_single_order(clients, case)
+    case = complete_delivery(api, case, order_id)
+    events = must(api.get('/api/calendar'))
+    assert not any(event['type'] in ('Inicio programado de producción', 'Entrega comprometida') for event in events)
+    assert next(event for event in events if event['type'] == 'Vencimiento de pago')['state_label'] == 'Entregada · saldo pendiente'
+    case = mutate(api, case, 'tasks', {'title': 'Llamar por una consulta separada', 'owner_id': accounts['admin']['id'],
+        'due_at': (datetime.now(timezone.utc) + timedelta(days=2)).isoformat(), 'purpose': 'ATTENTION'})
+    case = mutate(api, case, 'tasks', {'production_id': order_id, 'title': 'Llamar para coordinar el cobro',
+        'owner_id': accounts['cashier']['id'], 'due_at': (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+        'purpose': 'COLLECTION'})
+    events = must(api.get('/api/calendar'))
+    assert any(event['type'] == 'Seguimiento de atención' and event['action'] == 'Llamar por una consulta separada' for event in events)
+    assert any(event['type'] == 'Seguimiento de cobro' and event['date_label'] == 'Cobro programado el' for event in events)
+    assert must(api.get('/api/calendar/unscheduled-collections')) == []
+    case = mutate(api, case, 'payments', {'production_id': order_id, 'amount': '1000.00', 'reference': 'Saldo pagado'})
+    attention = next(task for task in case['tasks'] if task['title'] == 'Llamar por una consulta separada')
+    collection = next(task for task in case['tasks'] if task['title'] == 'Llamar para coordinar el cobro')
+    assert attention['done_at'] is None and collection['done_at'] is not None
+    events = must(api.get('/api/calendar'))
+    assert any(event['action'] == attention['title'] for event in events)
+    assert not any(event['type'] in ('Seguimiento de cobro', 'Vencimiento de pago') for event in events)
+
+
+def test_password_policy_and_service_generation_sessions(clients, accounts, monkeypatch):
+    from datetime import timedelta
+    import app.security as security
+    from app.security import digest
+    api = clients['admin']
+    bad = api.post('/api/users', json={'username': 'shortpw', 'name': 'Password corto', 'password': '1234567',
+                                       'roles': ['Atención'], 'capacity': 20})
+    assert bad.status_code == 422
+    created = must(api.post('/api/users', json={'username': 'eightpw', 'name': 'Password ocho', 'password': '12345678',
+                                                'roles': ['Atención'], 'capacity': 20}), 201)
+    user_client = TestClient(app, headers={'X-Comgraf-Request':'1','X-Comgraf-Contract':'5','X-Comgraf-Build':'1.4.0'})
+    login = user_client.post('/api/auth/login', json={'username': 'eightpw', 'password': '12345678'})
+    assert must(login)['id'] == created['id']
+    assert 'max-age=31536000' in login.headers['set-cookie'].lower()
+    assert user_client.post('/api/auth/password', json={'current_password':'12345678','new_password':'shorter'}).status_code == 422
+    must(user_client.post('/api/auth/password', json={'current_password':'12345678','new_password':'abcdefgh'}))
+    assert user_client.get('/api/auth/me').status_code == 401
+    must(user_client.post('/api/auth/login', json={'username':'eightpw','password':'abcdefgh'}))
+    target = must(api.get('/api/users'))
+    target = next(person for person in target if person['id'] == created['id'])
+    update = {'name': target['name'], 'roles': target['roles'], 'active': True, 'capacity': target['capacity'], 'password': '1234567'}
+    assert api.put(f'/api/users/{created["id"]}', json=update).status_code == 422
+    update['password'] = 'abcdefgh'
+    must(api.put(f'/api/users/{created["id"]}', json=update))
+    assert user_client.get('/api/auth/me').status_code == 401
+    must(user_client.post('/api/auth/login', json={'username':'eightpw','password':'abcdefgh'}))
+    token = user_client.cookies.get('comgraf_session')
+    with SessionLocal.begin() as db:
+        session = db.get(Session, digest(token))
+        assert session.generation == app.state.session_generation
+        assert session.expires_at > datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=360)
+    real_clock = security.now
+    monkeypatch.setattr(security, 'now', lambda: real_clock() + timedelta(hours=13))
+    assert user_client.get('/api/auth/me').status_code == 200
+    monkeypatch.setattr(security, 'now', real_clock)
+    generation = app.state.session_generation
+    assert user_client.get('/api/auth/me').status_code == 200  # workers share the service generation
+    app.state.session_generation = str(uuid.uuid4())
+    try:
+        restarted = user_client.get('/api/auth/me')
+        assert restarted.status_code == 401
+        assert restarted.json()['detail'] == 'El servicio se reinició. Inicia sesión nuevamente'
+    finally:
+        app.state.session_generation = generation
+    assert user_client.get('/api/auth/me').status_code == 200
+    must(api.put(f'/api/users/{created["id"]}', json={**update, 'active': False, 'password': None}))
+    assert user_client.get('/api/auth/me').status_code == 401
+    user_client.close()
 
 
 def test_atomic_production_request_rolls_back_and_retries_without_duplicates(clients, accounts):
@@ -176,11 +299,10 @@ def test_multiple_orders_keep_products_stages_deliveries_and_calendar_separate(c
     all_orders=must(api.get('/api/orders?view=production'))
     ready_orders=must(api.get('/api/orders?view=ready'))
     counts=must(api.get('/api/counts'))
-    assert all_orders['total']==1 and len(all_orders['items'])==1 and all_orders['count_type']=='órdenes'
-    assert all_orders['items'][0]['id']==second_id
+    assert all_orders['total']==0 and not all_orders['items'] and all_orders['count_type']=='órdenes'
     assert ready_orders['total']==1 and {row['id'] for row in ready_orders['items']}=={second_id}
     assert ready_orders['items'][0]['pending_quantities'][0]['quantity']=='2.000'
-    assert counts['production_orders']==1 and counts['ready_orders']==1
+    assert counts['production_orders']==0 and counts['ready_orders']==1
     assert must(api.get('/api/cases',params={'view':'production','stage':'PRINTING'}))['total']==0
 
     events=must(api.get('/api/calendar'))
@@ -872,7 +994,9 @@ def test_production_quote_delivery_debt_and_idempotent_payment(clients,accounts)
     c=mutate(api,c,'production/schedule',{'scheduled_at':datetime.now(timezone.utc).isoformat(),'committed_date':str(today()+timedelta(days=2))})
     schedule_event=next(e for e in c['events'] if e['data'].get('action')=='schedule')
     assert schedule_event['data']['current']['committed_date']==str(today()+timedelta(days=2))
-    assert len(must(api.get('/api/calendar')))==2
+    calendar_events = must(api.get('/api/calendar'))
+    assert len(calendar_events)==3
+    assert {event['type'] for event in calendar_events} == {'Inicio programado de producción', 'Entrega comprometida', 'Vencimiento de pago'}
     c=mutate(api,c,'production/stage',{'stage':'PRINTING'})
     assert c['production']['authorized_at'] is None
     upload=api.post(f'/api/cases/{c["id"]}/attachments',files={'file':('arte.pdf',b'%PDF-1.4\n%%EOF','application/pdf')},data={'art_version':'v1'})

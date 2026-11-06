@@ -19,7 +19,7 @@ cd C:\Users\asuka\Desktop\CRM\backend
 ..\.venv\Scripts\python.exe -m app.cli create-admin
 ```
 
-El comando solicita usuario, nombre y contraseña de al menos 12 caracteres sin mostrarla. Solo funciona si todavía no hay usuarios y protege la creación simultánea. Los usuarios siguientes se crean en Configuración.
+El comando solicita usuario, nombre y contraseña de 8 a 200 caracteres sin mostrarla. Solo funciona si todavía no hay usuarios y protege la creación simultánea. Los usuarios siguientes se crean en Configuración.
 
 Iniciar la aplicación:
 
@@ -50,6 +50,12 @@ docker compose exec app python -m app.cli create-admin
 Abrir **https://localhost**. La URL HTTP local redirige a HTTPS. Si ya tienes `.env`, `configure.py` se niega a sobrescribirlo. Ajusta sus variables; Compose fuerza host `db`, puerto `3306` y rutas internas, por lo que puede utilizar las claves existentes. Los volúmenes de Compose son independientes de la base portátil; no se importan datos automáticamente entre instalaciones.
 
 MySQL no publica ningún puerto. Solo Python habla con MySQL; React usa `/api`. La imagen sirve recursos compilados locales. Los contenedores se comunican por una red interna. La aplicación se ejecuta como usuario sin privilegios. Los volúmenes conservan MySQL y adjuntos al recrear servicios; **no uses `docker compose down -v` para actualizar**.
+
+### Sesiones y reinicios
+
+La cookie `comgraf_session` es persistente, `HttpOnly` y `SameSite=Strict`; se marca `Secure` cuando la instalación usa HTTPS. El servidor la renueva con una vigencia técnica móvil de hasta 365 días de inactividad. La sesión no expira a las 12 horas: sigue vinculada a la generación del arranque, y el servidor la revoca al cerrar sesión, cambiar la contraseña, desactivar la cuenta o reiniciar el servicio completo. El navegador debe conservar sus cookies para mantener la sesión al cerrarlo y abrirlo.
+
+`app.start` genera una sola identidad antes de lanzar Uvicorn. Todos los workers heredan la misma identidad; el reinicio aislado de un worker no cambia la generación. Un reinicio del servicio o del contenedor vuelve a generarla e invalida las sesiones previas. Las sesiones antiguas se rechazan con el mensaje “El servicio se reinició. Inicia sesión nuevamente”. En instalaciones locales y Docker se debe iniciar mediante `python -m app.start`, que aplica migraciones y genera esa identidad una vez para el servicio.
 
 ### HTTPS para toda la aplicación en la red local
 
