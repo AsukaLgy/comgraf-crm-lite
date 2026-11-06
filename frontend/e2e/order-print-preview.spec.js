@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 const credentials = JSON.parse(fs.readFileSync(path.resolve('../.runtime/e2e.json'), 'utf8'))
-const headers = { 'X-Comgraf-Request': '1', 'X-Comgraf-Contract': '4', 'X-Comgraf-Build': '1.4.0' }
+const headers = { 'X-Comgraf-Request': '1', 'X-Comgraf-Contract': '5', 'X-Comgraf-Build': '1.4.0' }
 
 async function post(page, url, data) {
   const response = await page.request.post(url, { headers, data })
@@ -66,7 +66,7 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
   let record = await post(page, '/api/cases', {
     client_id: client.id,
     subject: 'Dos órdenes con vista previa',
-    kind: 'Solicitud',
+    kind: 'Solicitud', creation_context: 'personal',
   })
   record = await post(page, `/api/cases/${record.id}/take`, {
     version: record.version,

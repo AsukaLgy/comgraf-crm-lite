@@ -1,6 +1,6 @@
 import {HNL_CURRENCY} from './domain'
 
-export const API_CONTRACT_VERSION = '4'
+export const API_CONTRACT_VERSION = '5'
 export const PRODUCT_VERSION = '1.4.0'
 let contractCheck
 
@@ -33,7 +33,7 @@ export async function api(path, options = {}) {
   if ((rest.method || 'GET').toUpperCase() !== 'GET') await assertContract()
   let response
   try { response = await fetch('/api' + path, {credentials: 'same-origin', ...rest, headers: {'X-Comgraf-Request': '1', 'X-Comgraf-Contract': API_CONTRACT_VERSION, 'X-Comgraf-Build': PRODUCT_VERSION, ...(body instanceof FormData ? {} : {'Content-Type': 'application/json'}), ...rest.headers}, body: body instanceof FormData ? body : body === undefined ? undefined : JSON.stringify(body)}) }
-  catch { throw new Error('No se pudo conectar. Tus datos permanecen en el formulario.') }
+  catch (error) { if (error?.name === 'AbortError') throw error; throw new Error('No se pudo conectar. Tus datos permanecen en el formulario.') }
   const data = await response.json().catch(() => ({}))
   if (!response.ok) {
     const detail = Array.isArray(data.detail) ? data.detail.map(x => `${x.loc.slice(1).join('.')}: ${x.msg}`).join(' · ') : typeof data.detail === 'object' ? data.detail?.message : data.detail

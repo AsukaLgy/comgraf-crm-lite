@@ -164,78 +164,32 @@ export default function CasePage({ user, print = false }) {
     )
   }
   function delivery() {
+    const eligible = (c.productions || []).filter((order) => !order.cancelled_at && !order.blocked_since && !order.classification_required && order.stage === 'READY' && order.delivery_status !== 'Completa')
+    if (!eligible.length) return
     operation(
-      'deliveries',
+      'deliveries/complete',
       'Registrar entrega',
       [
-        {
-          name: 'item_id',
-          label: 'Partida',
-          options: c.items.map((i) => ({
-            value: i.id,
-            label: `${i.product} · ${quantity(i.quantity)} ${i.unit}`,
-          })),
-          required: true,
-          empty: 'Seleccionar partida',
-        },
-        {
-          name: 'quantity',
-          label: 'Cantidad entregada',
-          type: 'number',
-          step: '0.001',
-          min: '0.001',
-          required: true,
-        },
-        {
-          name: 'delivered_at',
-          label: `Fecha y hora (${timezone})`,
-          type: 'datetime-local',
-          required: true,
-        },
-        { name: 'receiver', label: 'Recibido por', required: true },
-        { name: 'method', label: 'Modalidad', required: true },
+        ...(eligible.length > 1 ? [{ name: 'production_id', label: 'Orden que se entregará', options: eligible.map((order) => ({ value: order.id, label: `${order.order_number} · ${order.description || 'Trabajo'}` })), required: true }] : []),
+        { name: 'method', label: 'Modalidad', options: ['Retiro en local', 'Entrega (delivery)'], required: true },
+        { name: 'receiver', label: 'Recibido por (opcional)' },
         {
           name: 'evidence',
-          label: 'Evidencia / referencia del recibo',
+          label: 'Evidencia / referencia (opcional)',
           type: 'textarea',
-          required: true,
         },
-        ...(finance && p.currency === HNL_CURRENCY
-          ? [
-              { name: 'payment_now', label: 'Registrar pago con esta entrega', type: 'checkbox' },
-              {
-                name: 'payment_amount',
-                label: `Abono o liquidación (${HNL_CURRENCY}) · saldo actual ${money(c.balance, p.currency)}`,
-                type: 'number',
-                min: '0.01',
-                step: '0.01',
-                required: true,
-                when: (v) => v.payment_now,
-              },
-              {
-                name: 'payment_reference',
-                label: 'Referencia del pago',
-                required: true,
-                when: (v) => v.payment_now,
-              },
-            ]
-          : []),
       ],
       {
-        method: p.delivery_method,
-        payment_now: false,
-        payment_amount: c.balance > 0 ? c.balance : '',
+        production_id: String(eligible.find((order) => order.id === p?.id)?.id || eligible[0].id),
+        method: 'Retiro en local',
       },
       (v) => {
-        const { payment_now, ...delivery } = v
-        return {
-          ...delivery,
-          item_id: Number(v.item_id),
-          delivered_at: toUTC(v.delivered_at),
-          payment_amount: payment_now ? v.payment_amount : null,
-          payment_reference: payment_now ? v.payment_reference : null,
-        }
+        const selected = eligible.length === 1 ? eligible[0].id : Number(v.production_id)
+        return { production_id: selected, method: v.method, receiver: v.receiver || '', evidence: v.evidence || '' }
       },
+      undefined,
+      'POST',
+      <p className="notice">{eligible.length === 1 ? `Se entregará completa la orden ${eligible[0].order_number}. La fecha y hora se asignarán al guardar.` : 'Se registrará la entrega completa de una sola orden. La fecha y hora se asignarán al guardar.'}</p>,
     )
   }
   if (print) return <CasePrintSheet id={id} record={c} person={person} />
@@ -583,6 +537,8 @@ export default function CasePage({ user, print = false }) {
               user={user}
               finance={finance && c.lifecycle !== 'Completado'}
               onOperation={operation}
+              onDeliver={delivery}
+              canDeliver={production && c.lifecycle !== 'Completado' && (c.productions || []).some((order) => !order.cancelled_at && !order.blocked_since && !order.classification_required && order.stage === 'READY' && order.delivery_status !== 'Completa')}
             />
           )}
           {section === 'Archivos' && (

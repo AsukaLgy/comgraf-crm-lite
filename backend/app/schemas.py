@@ -97,6 +97,7 @@ class CaseInput(Input):
     description: str = Field(default='', max_length=20000)
     kind: Literal['Cotización', 'Solicitud', 'Reclamo']
     priority: Literal['Baja', 'Normal', 'Alta', 'Urgente'] = 'Normal'
+    creation_context: Literal['pool', 'personal']
 
 
 class Mutation(Input):
@@ -235,6 +236,14 @@ class Conversion(Mutation):
     email: str = Field(default='', max_length=180)
 
 
+class ProductionRequestInput(Conversion):
+    client_id: int
+    contact_id: int | None = None
+    subject: str = Field(min_length=1, max_length=240)
+    description: str = Field(default='', max_length=20000)
+    priority: Literal['Baja', 'Normal', 'Alta', 'Urgente'] = 'Normal'
+
+
 class StageInput(Mutation):
     stage: Stage
     reason: str = Field(default='', max_length=3000)
@@ -297,6 +306,13 @@ class DeliveryInput(Mutation):
 class DeliveryWithPaymentInput(DeliveryInput):
     payment_amount: Annotated[Decimal, Field(gt=0, max_digits=14, decimal_places=2)] | None = None
     payment_reference: str | None = Field(default=None, min_length=1, max_length=240)
+
+
+class CompleteDeliveryInput(Mutation):
+    production_id: int = Field(ge=1)
+    method: Literal['Retiro en local', 'Entrega (delivery)']
+    receiver: str = Field(default='', max_length=180)
+    evidence: str = Field(default='', max_length=3000)
 
 
 class PaymentInput(Mutation):

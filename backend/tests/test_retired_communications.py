@@ -17,7 +17,7 @@ def create_customer(api):
 
 
 def create_case(api, client_id, kind='Cotización'):
-    response = api.post('/api/cases', json={'client_id': client_id, 'subject': 'Trabajo de prueba', 'kind': kind})
+    response = api.post('/api/cases', json={'client_id': client_id, 'subject': 'Trabajo de prueba', 'kind': kind, 'creation_context': 'pool'})
     assert response.status_code == 201, response.text
     return response.json()
 
@@ -32,13 +32,13 @@ def test_three_new_types_without_origin_relation_or_automatic_order(clients):
         assert record['production_count'] == 0 and record['production'] is None
         assert record['owner_id'] is None and record['status'] == 'Abierto'
     for kind in ('Consulta', 'Seguimiento'):
-        response = api.post('/api/cases', json={'client_id': client['id'], 'subject': 'Antiguo', 'kind': kind})
+        response = api.post('/api/cases', json={'client_id': client['id'], 'subject': 'Antiguo', 'kind': kind, 'creation_context': 'pool'})
         assert response.status_code == 422
     for extra in ({}, {'channel': 'Presencial'}):
         response = api.post('/api/cases', json={'client_id': client['id'], 'subject': 'Inválido', **extra})
         assert response.status_code == 422
     related = api.post('/api/cases', json={
-        'client_id': client['id'], 'subject': 'Relación por API', 'kind': 'Cotización',
+        'client_id': client['id'], 'subject': 'Relación por API', 'kind': 'Cotización', 'creation_context': 'pool',
         'related_case_id': record['id'],
     })
     assert related.status_code == 201, related.text

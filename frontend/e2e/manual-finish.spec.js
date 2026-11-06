@@ -4,7 +4,7 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 const credentials = JSON.parse(fs.readFileSync(path.resolve('../.runtime/e2e.json'), 'utf8'))
-const headers = { 'X-Comgraf-Request': '1', 'X-Comgraf-Contract': '4', 'X-Comgraf-Build': '1.4.0' }
+const headers = { 'X-Comgraf-Request': '1', 'X-Comgraf-Contract': '5', 'X-Comgraf-Build': '1.4.0' }
 
 test('la OP seleccionada se confirma desde Actividad junto a las etapas', async ({ page }) => {
   const errors = []
@@ -21,7 +21,7 @@ test('la OP seleccionada se confirma desde Actividad junto a las etapas', async 
     return response.json()
   }
   const client = await post('/clients', { name: 'E2E · Trabajo terminado ' + Date.now() })
-  let record = await post('/cases', { client_id: client.id, subject: 'E2E · Confirmación manual', kind: 'Solicitud' })
+  let record = await post('/cases', { client_id: client.id, subject: 'E2E · Confirmación manual', kind: 'Solicitud', creation_context: 'personal' })
   record = await post(`/cases/${record.id}/take`, { version: record.version, key: randomUUID() })
   record = await post(`/cases/${record.id}/convert`, {
     version: record.version, key: randomUUID(), committed_date: '2099-12-31',
@@ -86,7 +86,7 @@ test('dos OP comparten selector, confirmación manual, QR y aviso de pendientes'
     return response.json()
   }
   const client = await post('/clients', { name: 'E2E · Dos OP ' + Date.now() })
-  let record = await post('/cases', { client_id: client.id, subject: 'E2E · Grupo mixto', kind: 'Solicitud' })
+  let record = await post('/cases', { client_id: client.id, subject: 'E2E · Grupo mixto', kind: 'Solicitud', creation_context: 'personal' })
   record = await post(`/cases/${record.id}/take`, { version: record.version, key: randomUUID() })
   const conversion = (version) => ({ version, key: randomUUID(), committed_date: '2099-12-31',
     payment_due_date: '2099-12-31', delivery_method: 'Retiro en taller', advance_required: '0', payment_terms: 'Contado',

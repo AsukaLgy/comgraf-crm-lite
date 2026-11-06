@@ -256,6 +256,17 @@ class Idempotency(Base):
     created_at = Column(DateTime, nullable=False, default=now)
 
 
+class CreationRequest(Base):
+    __tablename__ = 'creation_requests'
+    __table_args__ = (UniqueConstraint('user_id', 'key'),)
+    id = Column(Integer, primary_key=True)
+    user_id = Column(ForeignKey('users.id'), nullable=False)
+    key = Column(String(80), nullable=False)
+    request_hash = Column(String(64), nullable=False)
+    case_id = Column(ForeignKey('cases.id'), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=now)
+
+
 class Draft(Base):
     __tablename__ = 'drafts'
     __table_args__ = (UniqueConstraint('user_id', 'case_id', 'channel'),)

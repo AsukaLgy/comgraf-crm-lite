@@ -333,8 +333,8 @@ def decide_quote(db, user, case_id, quote_id, data):
     return case
 
 
-def convert(db, user, case_id, data):
-    case, changed = mutation(db, user, case_id, data, 'convert', 'attention')
+def convert(db, user, case_id, data, *, permission='attention'):
+    case, changed = mutation(db, user, case_id, data, 'convert', permission)
     if not changed: return case
     items = [i.model_dump(mode='json') for i in data.items]
     if data.quote_id:
@@ -943,6 +943,40 @@ def deliver(db, user, case_id, data):
         if pickup_tasks:
             event(db, case, user, 'Seguimiento de recogida resuelto automáticamente por entrega completa', data={'action': 'pickup_followup_resolved', 'task_ids': [task.id for task in pickup_tasks], 'origin': 'automatic'})
     complete_resolved_production(db, case, user, 'delivery_recorded')
+    return case
+
+
+def deliver_complete(db, user, case_id, data):
+    case, changed = mutation(db, user, case_id, data, 'delivery_complete', 'production')
+    if not changed: return case
+    production = get_production(db, case, data.production_id)
+    if production.cancelled_at or production.cancellation_review_pending:
+        fail('La orden está anulada o pendiente de revisión y no puede entregarse', 409)
+    if production.classification_required or production.stage != 'READY' or production.blocked_since:
+        fail('La orden debe estar habilitada, clasificada, lista para entregar y sin bloqueos')
+    if delivery_status(db, case.id, production.id) == 'Completa':
+        fail('Esta orden ya tiene una entrega completa registrada', 409)
+    items = db.scalars(select(Item).where(Item.production_id == production.id).order_by(Item.id).with_for_update()).all()
+    if not items: fail('La orden no tiene partidas entregables', 409)
+    delivered_at = now()
+    for item in items:
+        delivered = db.scalar(select(func.coalesce(func.sum(Delivery.quantity), 0)).where(Delivery.item_id == item.id))
+        remaining = Decimal(item.quantity) - Decimal(delivered or 0)
+        if remaining < 0: fail('El historial de cantidades supera la fabricación; requiere revisión', 409)
+        if remaining:
+            db.add(Delivery(case_id=case.id, item_id=item.id, quantity=remaining, delivered_at=delivered_at,
+                            receiver=data.receiver, method=data.method, evidence=data.evidence or f'Entrega completa OP-{production.id:05d}', actor_id=user.id))
+    event(db, case, user, f'Entrega completa de OP-{production.id:05d} · {data.method}',
+          data={'action': 'delivery_completed', 'production_id': production.id, 'stage': production.stage, 'method': data.method,
+                'seconds': max(0, (delivered_at - production.stage_started_at).total_seconds()),
+                'on_time_original': bool(production.original_committed_date and local_day(delivered_at) <= production.original_committed_date)})
+    pickup_tasks = db.scalars(select(Task).where(Task.case_id == case.id, Task.production_id == production.id,
+                                                   Task.category == 'PICKUP', Task.done_at.is_(None))).all()
+    for task in pickup_tasks: task.done_at = delivered_at
+    if pickup_tasks:
+        event(db, case, user, 'Seguimiento de recogida resuelto por entrega completa',
+              data={'action': 'pickup_followup_resolved', 'task_ids': [task.id for task in pickup_tasks], 'origin': 'automatic'})
+    # Entregar no registra pagos ni completa la solicitud. La atención se cierra aparte.
     return case
 
 

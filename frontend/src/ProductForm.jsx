@@ -56,7 +56,7 @@ export function ItemsEditor({items,onChange}){
     </div></section>
   })}<button type="button" onClick={()=>onChange([...items,newItem()])}><Plus size={15}/>Agregar producto</button></div>
 }
-function cleanItems(items){return items.map(item=>({...Object.fromEntries(Object.entries(item).filter(([key])=>key!=='cai_summary')),specs:Object.fromEntries(Object.entries(item.specs||{}).filter(([,v])=>v!==''&&v!==null).map(([k,v])=>[k,['copies','sheets','games_per_pad','additional_copies'].includes(k)?Number(v):v]))}))}
+export function cleanItems(items){return items.map(item=>({...Object.fromEntries(Object.entries(item).filter(([key])=>key!=='cai_summary')),specs:Object.fromEntries(Object.entries(item.specs||{}).filter(([,v])=>v!==''&&v!==null).map(([k,v])=>[k,['copies','sheets','games_per_pad','additional_copies'].includes(k)?Number(v):v]))}))}
 
 function ClientIdentity({record,user,v,set}) {
   const qc=useQueryClient(),client=record.client

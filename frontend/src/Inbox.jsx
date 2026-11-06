@@ -8,6 +8,7 @@ import { PRODUCTION_STAGES, CASE_STATUSES, CASE_PRIORITIES } from './domain'
 import CaseTable from './CaseTable'
 import OrderTable from './OrderTable'
 import NewCase from './NewCase'
+import NewProductionRequest from './NewProductionRequest'
 
 export const VIEW_LABELS = {
   pool: 'Solicitudes sin asignar',
@@ -131,10 +132,10 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
                 : orderView ? 'Cada fila es una orden vinculada a su solicitud, con productos y fechas propios.' : 'Atención, producción y seguimiento desde una misma solicitud.'}
           </p>
         </div>
-        {can(user, 'attention') && (
-          <button className="primary" onClick={() => setModal('new')}>
+        {(view === 'production' ? can(user, 'production') : can(user, 'attention')) && (
+          <button className="primary" onClick={() => setModal(view === 'production' ? 'production-create' : 'new')}>
             <Plus size={17} />
-            Nueva solicitud
+            {view === 'production' ? 'Generar orden de producción' : 'Nueva solicitud'}
           </button>
         )}
       </div>
@@ -385,7 +386,8 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
           </div>
         </div>
       </section>
-      {modal === 'new' && <NewCase user={user} onClose={() => setModal(null)} />}
+      {modal === 'new' && <NewCase user={user} creationContext={poolView ? 'pool' : 'personal'} onClose={() => setModal(null)} />}
+      {modal === 'production-create' && <NewProductionRequest user={user} onClose={() => setModal(null)} />}
       {modal === 'save' && !poolView && (
         <FormDialog
           title="Guardar vista"

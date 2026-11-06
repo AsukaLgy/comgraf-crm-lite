@@ -2,13 +2,14 @@ import { can, date, localDate, money, quantity } from './api'
 import { Badge, Empty, Panel } from './components'
 import { HNL_CURRENCY } from './domain'
 
-export default function DeliveryFinance({ record, user, finance, onOperation }) {
+export default function DeliveryFinance({ record, user, finance, onOperation, onDeliver, canDeliver = false }) {
   const production = record.production
   return (
     <Panel
       title="Entregas y cobros"
       action={
         <div className="actions">
+          {canDeliver && <button className="primary" onClick={onDeliver}>Registrar entrega de OP completa</button>}
           {finance &&
             !production.cancellation_review_pending &&
             production.currency === HNL_CURRENCY &&

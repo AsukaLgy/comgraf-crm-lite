@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import select
+import hashlib
+import json
+from sqlalchemy import func, select
 from ..db import get_db
-from ..models import Case, Client, Contact, Draft, Production, SavedView
+from ..models import Case, Client, Contact, CreationRequest, Draft, Production, SavedView, User
 from .. import schemas as s, services as service
 from ..security import current_user, require
-from ..repository import row, get_case, case_detail, cases_list, case_counts, orders_list
+from ..repository import row, get_case, case_detail, cases_list, case_counts, orders_list, attention_predicates, normalize
 from .common import case_response
 
 router = APIRouter(prefix='/api', tags=['Expedientes'])
@@ -20,6 +22,25 @@ def counts(user=Depends(current_user), db=Depends(get_db, scope='function')):
     return case_counts(db, user)
 
 
+@router.get('/production-clients')
+def production_clients(q: str = '', user=Depends(current_user), db=Depends(get_db, scope='function')):
+    require(db, user, 'production')
+    # Búsqueda acotada para crear OP: no expone RTN, teléfonos, correos ni el perfil comercial.
+    query = select(Client).order_by(Client.name)
+    if q:
+        query = query.where(Client.search_text.contains(normalize(q)))
+    return [{'id': client.id, 'name': client.name, 'company': client.company or '', 'provisional': client.provisional}
+            for client in db.scalars(query)]
+
+
+@router.get('/production-clients/{client_id}/contacts')
+def production_client_contacts(client_id: int, user=Depends(current_user), db=Depends(get_db, scope='function')):
+    require(db, user, 'production')
+    if not db.get(Client, client_id): raise HTTPException(404, 'Cliente no encontrado')
+    return [{'id': contact.id, 'name': contact.name} for contact in db.scalars(
+        select(Contact).where(Contact.client_id == client_id).order_by(Contact.name))]
+
+
 @router.get('/orders')
 def list_orders(request: Request, user=Depends(current_user), db=Depends(get_db, scope='function')):
     return orders_list(db, user, dict(request.query_params))
@@ -28,17 +49,57 @@ def list_orders(request: Request, user=Depends(current_user), db=Depends(get_db,
 @router.post('/cases', status_code=201)
 def create(data: s.CaseInput, user=Depends(current_user), db=Depends(get_db, scope='function')):
     require(db, user, 'attention')
+    if data.creation_context == 'personal':
+        db.scalar(select(User).where(User.id == user.id).with_for_update())
+        pending = attention_predicates()['pending_assignment']
+        count = db.scalar(select(func.count()).select_from(Case).where(Case.owner_id == user.id, pending))
+        if count >= user.capacity:
+            raise HTTPException(409, 'Alcanzaste tu capacidad de solicitudes pendientes (atención, producción, seguimiento o saldo)')
     if not db.get(Client, data.client_id): raise HTTPException(422, 'Cliente no encontrado')
     if data.contact_id:
         contact = db.get(Contact, data.contact_id)
         if not contact or contact.client_id != data.client_id: raise HTTPException(422, 'El contacto no pertenece al cliente')
     if data.related_case_id: get_case(db, user, data.related_case_id)
-    case = Case(**data.model_dump())
+    values = data.model_dump(exclude={'creation_context'})
+    values['owner_id'] = None if data.creation_context == 'pool' else user.id
+    case = Case(**values)
     db.add(case)
     db.flush()
     label = 'orden de producción' if case.kind == 'Solicitud' else case.kind.lower()
     service.event(db, case, user, f'Solicitud de {label} creada', data={'action': 'created'})
     return case_response(db, user, case)
+
+
+@router.post('/production-requests', status_code=201)
+def create_production_request(data: s.ProductionRequestInput, user=Depends(current_user), db=Depends(get_db, scope='function')):
+    require(db, user, 'production')
+    # Serializar las creaciones por usuario hace idempotentes los reintentos simultáneos.
+    db.scalar(select(User).where(User.id == user.id).with_for_update())
+    payload = data.model_dump(mode='json', exclude={'version'})
+    signature = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+    previous = db.scalar(select(CreationRequest).where(CreationRequest.user_id == user.id, CreationRequest.key == data.key))
+    if previous:
+        if previous.request_hash != signature:
+            raise HTTPException(409, 'La clave de reintento ya pertenece a otra creación')
+        case = get_case(db, user, previous.case_id)
+        production_id = db.scalar(select(Production.id).where(Production.case_id == case.id).order_by(Production.id.desc()).limit(1))
+        return case_response(db, user, case, production_id)
+    pending = attention_predicates()['pending_assignment']
+    count = db.scalar(select(func.count()).select_from(Case).where(Case.owner_id == user.id, pending))
+    if count >= user.capacity:
+        raise HTTPException(409, 'Alcanzaste tu capacidad de solicitudes pendientes (atención, producción, seguimiento o saldo)')
+    if not db.get(Client, data.client_id): raise HTTPException(422, 'Cliente no encontrado')
+    contact = db.get(Contact, data.contact_id) if data.contact_id else None
+    if data.contact_id and (not contact or contact.client_id != data.client_id): raise HTTPException(422, 'El contacto no pertenece al cliente')
+    case = Case(client_id=data.client_id, contact_id=data.contact_id, subject=data.subject, description=data.description,
+                kind='Solicitud', priority=data.priority, mode='Producción', owner_id=user.id)
+    db.add(case)
+    db.flush()
+    service.event(db, case, user, 'Solicitud de orden de producción creada', data={'action': 'created'})
+    service.convert(db, user, case.id, data, permission='production')
+    db.add(CreationRequest(user_id=user.id, key=data.key, request_hash=signature, case_id=case.id))
+    production_id = db.scalar(select(Production.id).where(Production.case_id == case.id).order_by(Production.id.desc()).limit(1))
+    return case_response(db, user, case, production_id)
 
 
 @router.get('/cases/{case_id}')

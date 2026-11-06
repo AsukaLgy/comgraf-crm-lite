@@ -131,7 +131,8 @@ export function FormDialog({
     [error, setError] = useState(null),
     [busy, setBusy] = useState(false),
     [saved, setSaved] = useState(false)
-  const locked = useRef(false)
+  const locked = useRef(false), errorRef = useRef(null)
+  useEffect(() => { if (error) errorRef.current?.focus() }, [error])
   const change = (key, value) => {
     setValues((v) => ({ ...v, [key]: value }))
     setError(null)
@@ -158,7 +159,7 @@ export function FormDialog({
       {saved && afterSave ? afterSave() : <form onSubmit={save}>
         <div className="dialog-body">
           {render(values, change)}
-          <ErrorBox error={error} />
+          <div ref={errorRef} tabIndex={-1} aria-label="Error al guardar"><ErrorBox error={error} /></div>
         </div>
         <footer>
           <button type="button" onClick={onClose} disabled={busy}>
@@ -199,7 +200,7 @@ export function Operation({
     try {
       await api(`/cases/${record.id}/${path}`, {
         method,
-        body: { ...body, ...(record.production?.id ? { production_id: record.production.id } : {}), version: record.version, key: key.current },
+        body: { ...(record.production?.id ? { production_id: record.production.id } : {}), ...body, version: record.version, key: key.current },
       })
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['case', String(record.id)] }),

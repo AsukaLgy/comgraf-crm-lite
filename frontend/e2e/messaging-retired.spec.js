@@ -17,7 +17,7 @@ test('la mensajería retirada no aparece ni consulta endpoints en navegación y 
         permissions: ['*'],
         timezone: 'America/Tegucigalpa',
       },
-      '/api/version': { product_version: '1.4.0', build: 'test', contract_version: '4' },
+      '/api/version': { product_version: '1.4.0', build: 'test', contract_version: '5' },
       '/api/users': [],
       '/api/roles': { roles: [], available: [] },
     }
@@ -112,7 +112,7 @@ test('notas e historial vinculado son de solo lectura y conservan borradores ant
             timezone: 'America/Tegucigalpa',
           }
         : path === '/api/version'
-          ? { product_version: '1.4.0', build: 'test', contract_version: '4' }
+          ? { product_version: '1.4.0', build: 'test', contract_version: '5' }
           : path === '/api/cases/1'
             ? record
             : path === '/api/users'

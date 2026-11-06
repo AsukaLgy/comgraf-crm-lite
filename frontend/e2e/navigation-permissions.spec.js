@@ -4,7 +4,7 @@ import path from 'node:path'
 import { PERMISSION_CATALOG } from '../src/permissionCatalog.js'
 
 const credentials = JSON.parse(fs.readFileSync(path.resolve('../.runtime/e2e.json'), 'utf8'))
-const headers = { 'X-Comgraf-Request': '1', 'X-Comgraf-Contract': '4', 'X-Comgraf-Build': '1.4.0' }
+const headers = { 'X-Comgraf-Request': '1', 'X-Comgraf-Contract': '5', 'X-Comgraf-Build': '1.4.0' }
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/')
@@ -22,7 +22,7 @@ test('Mi día muestra trabajo pendiente y Pool general conserva solicitudes sin 
   expect(clientResponse.ok()).toBeTruthy()
   const client = await clientResponse.json()
   const subject = 'E2E · Sin asignar ' + Date.now()
-  const caseResponse = await page.request.post('/api/cases', { headers, data: { client_id: client.id, subject, kind: 'Cotización' } })
+  const caseResponse = await page.request.post('/api/cases', { headers, data: { client_id: client.id, subject, kind: 'Cotización', creation_context: 'pool' } })
   expect(caseResponse.ok()).toBeTruthy()
 
   const actionResponse = page.waitForResponse((response) => response.url().includes('/api/cases?') && new URL(response.url()).searchParams.get('view') === 'action')

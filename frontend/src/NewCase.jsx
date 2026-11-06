@@ -11,7 +11,7 @@ const CASE_KINDS = [
   'Reclamo',
 ]
 
-export default function NewCase({ onClose, clientId, client: initialClient, user }) {
+export default function NewCase({ onClose, clientId, client: initialClient, user, creationContext = 'personal' }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const prefill = initialClient || null
@@ -47,10 +47,11 @@ export default function NewCase({ onClose, clientId, client: initialClient, user
             priority: values.priority,
             client_id: Number(values.client_id),
             contact_id: values.contact_id ? Number(values.contact_id) : null,
+            creation_context: creationContext,
           },
         })
 
-        queryClient.invalidateQueries()
+        await queryClient.invalidateQueries()
         navigate(`/cases/${record.id}`)
       }}
       render={(values, setValue) => (
@@ -104,7 +105,8 @@ export default function NewCase({ onClose, clientId, client: initialClient, user
             </Field>
           </div>
           <p className="muted">
-            La solicitud entrará al pool sin asignar. Puede cerrarse sin producir ningún trabajo.
+            {creationContext === 'pool' ? 'Se creará sin asignar en Pool general.' : 'Se asignará a tu usuario.'}
+            {' '}Puede cerrarse sin producir ningún trabajo.
           </p>
         </>
       )}
@@ -112,7 +114,7 @@ export default function NewCase({ onClose, clientId, client: initialClient, user
   )
 }
 
-function ClientAutocomplete({ user, selectedId, initialClient, onSelect, onClear }) {
+export function ClientAutocomplete({ user, selectedId, initialClient, onSelect, onClear, id = 'case-client', searchEndpoint = '/clients' }) {
   const [text, setText] = useState(
     initialClient?.id === Number(selectedId) ? initialClient.name : '',
   )
@@ -124,10 +126,11 @@ function ClientAutocomplete({ user, selectedId, initialClient, onSelect, onClear
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState(null)
   const createLock = useRef(false)
+  const root = useRef(null)
   const queryClient = useQueryClient()
   const search = useQuery({
-    queryKey: ['new-case-client-search', term],
-    queryFn: () => api(`/clients?q=${encodeURIComponent(term)}`),
+    queryKey: ['new-case-client-search', searchEndpoint, term],
+    queryFn: ({ signal }) => api(`${searchEndpoint}?q=${encodeURIComponent(term)}`, { signal }),
     enabled: term.length > 0,
   })
 
@@ -139,6 +142,8 @@ function ClientAutocomplete({ user, selectedId, initialClient, onSelect, onClear
   }, [text, selectedId])
 
   const results = term === text.trim() ? search.data || [] : []
+
+  useOutsideDismiss(root, setOpen)
 
   async function createClient() {
     if (createLock.current) return
@@ -179,6 +184,7 @@ function ClientAutocomplete({ user, selectedId, initialClient, onSelect, onClear
 
   function onKeyDown(event) {
     if (event.key === 'Escape') {
+      event.preventDefault()
       setOpen(false)
       return
     }
@@ -200,18 +206,20 @@ function ClientAutocomplete({ user, selectedId, initialClient, onSelect, onClear
   }
 
   return (
-    <div className="field autocomplete">
-      <label htmlFor="case-client">Cliente</label>
+    <div className="field autocomplete" ref={root}>
+      <label htmlFor={id}>Cliente</label>
       <input
-        id="case-client"
+        id={id}
         role="combobox"
         aria-autocomplete="list"
         aria-expanded={open}
-        aria-controls="client-suggestions"
+        aria-controls={`${id}-suggestions`}
+        aria-activedescendant={open && results[activeIndex] ? `${id}-option-${results[activeIndex].id}` : undefined}
         autoComplete="off"
         value={text}
         placeholder="Buscar nombre, empresa, RTN, teléfono o correo"
         onFocus={() => setOpen(true)}
+        onClick={() => setOpen(true)}
         onKeyDown={onKeyDown}
         onChange={(event) => {
           setText(event.target.value)
@@ -222,7 +230,7 @@ function ClientAutocomplete({ user, selectedId, initialClient, onSelect, onClear
       />
       <ErrorBox error={search.error || createError} />
       {open && (
-        <div className="suggestion-list" id="client-suggestions" role="listbox">
+        <div className="suggestion-list" id={`${id}-suggestions`} role="listbox">
           {selectedId && <p role="status">Cliente seleccionado</p>}
           {!selectedId && text.trim() && search.isFetching && (
             <p role="status">Buscando clientes…</p>
@@ -237,6 +245,7 @@ function ClientAutocomplete({ user, selectedId, initialClient, onSelect, onClear
               <button
                 type="button"
                 role="option"
+                id={`${id}-option-${client.id}`}
                 aria-selected={index === activeIndex}
                 key={client.id}
                 onMouseDown={(event) => event.preventDefault()}
@@ -306,6 +315,9 @@ function ContactAutocomplete({ user, clientId, value, onChange }) {
   const [createError, setCreateError] = useState(null)
   const [creating, setCreating] = useState(false)
   const createLock = useRef(false)
+  const root = useRef(null)
+  const inputId = `case-contact-${clientId || 'none'}`
+  useOutsideDismiss(root, setOpen)
   const contacts = useQuery({
     queryKey: ['client-contacts', clientId],
     queryFn: () => api(`/clients/${clientId}/contacts`),
@@ -330,6 +342,7 @@ function ContactAutocomplete({ user, clientId, value, onChange }) {
 
   function onKeyDown(event) {
     if (event.key === 'Escape') {
+      event.preventDefault()
       setOpen(false)
       return
     }
@@ -371,18 +384,21 @@ function ContactAutocomplete({ user, clientId, value, onChange }) {
   }
 
   return (
-    <div className="field autocomplete">
-      <label htmlFor="case-contact">Contacto (opcional)</label>
+    <div className="field autocomplete" ref={root}>
+      <label htmlFor={inputId}>Contacto (opcional)</label>
       <input
-        id="case-contact"
+        id={inputId}
         role="combobox"
         aria-autocomplete="list"
         aria-expanded={open}
+        aria-controls={`${inputId}-suggestions`}
+        aria-activedescendant={open && results[activeIndex] ? `${inputId}-option-${results[activeIndex].id}` : undefined}
         autoComplete="off"
         disabled={!clientId}
         value={text || selectedContact?.name || ''}
         placeholder={clientId ? 'Buscar contacto…' : 'Selecciona un cliente primero'}
         onFocus={() => setOpen(true)}
+        onClick={() => setOpen(true)}
         onKeyDown={onKeyDown}
         onChange={(event) => {
           setText(event.target.value)
@@ -405,7 +421,7 @@ function ContactAutocomplete({ user, clientId, value, onChange }) {
       )}
       <ErrorBox error={contacts.error || createError} />
       {open && clientId && (
-        <div className="suggestion-list" role="listbox">
+        <div className="suggestion-list" id={`${inputId}-suggestions`} role="listbox">
           <button
             type="button"
             role="option"
@@ -424,6 +440,7 @@ function ContactAutocomplete({ user, clientId, value, onChange }) {
               <button
                 type="button"
                 role="option"
+                id={`${inputId}-option-${contact.id}`}
                 aria-selected={index === activeIndex}
                 key={contact.id}
                 onClick={() => selectContact(contact)}
@@ -481,4 +498,12 @@ function clientDetails(client) {
   ]
     .filter(Boolean)
     .join(' · ')
+}
+
+function useOutsideDismiss(root, setOpen) {
+  useEffect(() => {
+    const closeOutside = (event) => { if (!root.current?.contains(event.target)) setOpen(false) }
+    document.addEventListener('pointerdown', closeOutside)
+    return () => document.removeEventListener('pointerdown', closeOutside)
+  }, [root, setOpen])
 }

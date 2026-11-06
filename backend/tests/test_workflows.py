@@ -22,7 +22,7 @@ def must(response, status=200):
 
 def create(client, subject='Consulta presencial'):
     customer = must(client.post('/api/clients', json={'name':'María Álvarez', 'company':'Gráfica Norte', 'rtn':'08011990001234', 'phones':['+504 9999-1234'], 'emails':['maria@example.test']}), 201)
-    case = must(client.post('/api/cases', json={'client_id':customer['id'], 'subject':subject, 'kind':'Cotización'}), 201)
+    case = must(client.post('/api/cases', json={'client_id':customer['id'], 'subject':subject, 'kind':'Cotización', 'creation_context':'pool'}), 201)
     return customer, case
 
 
@@ -46,6 +46,84 @@ def release_single_order(clients, case):
     result = scan_order(clients, current)
     assert result['result'] == 'released'
     return must(api.get(f"/api/cases/{case['id']}?production_id={case['production']['id']}"))
+
+
+def complete_delivery(api, case, production_id=None, method='Retiro en local'):
+    production_id = production_id or case['production']['id']
+    payload = {'version': case['version'], 'key': key(), 'production_id': production_id, 'method': method,
+               'receiver': 'Cliente', 'evidence': 'Entrega completa'}
+    return must(api.post(f"/api/cases/{case['id']}/deliveries/complete", json=payload))
+
+
+def test_creation_context_assigns_only_personal_requests(clients, accounts):
+    api = clients['admin']
+    customer = must(api.post('/api/clients', json={'name': 'Contextos de alta'}), 201)
+    pool = must(api.post('/api/cases', json={'client_id': customer['id'], 'subject': 'Pool', 'kind': 'Solicitud', 'creation_context': 'pool'}), 201)
+    personal = must(api.post('/api/cases', json={'client_id': customer['id'], 'subject': 'Personal', 'kind': 'Solicitud', 'creation_context': 'personal'}), 201)
+    assert pool['owner_id'] is None
+    assert personal['owner_id'] == accounts['admin']['id']
+    assert api.post('/api/cases', json={'client_id': customer['id'], 'subject': 'Contexto inventado', 'kind': 'Solicitud', 'creation_context': 'unexpected'}).status_code == 422
+    assert api.post('/api/cases', json={'client_id': customer['id'], 'subject': 'Propietario arbitrario', 'kind': 'Solicitud', 'creation_context': 'personal', 'owner_id': accounts['agent']['id']}).status_code == 422
+    assert must(api.get('/api/cases', params={'view': 'pool'}))['total'] == 1
+    assert must(api.get('/api/cases', params={'view': 'mine'}))['total'] == 1
+
+
+def test_atomic_production_request_rolls_back_and_retries_without_duplicates(clients, accounts):
+    api = clients['admin']; operator = clients['printer']
+    customer = must(api.post('/api/clients', json={'name': 'Alta atómica'}), 201)
+    base = {**conversion(), 'client_id': customer['id'], 'subject': 'Solicitud y OP juntas', 'priority': 'Alta',
+            'contact_id': None, 'version': 1, 'key': key()}
+    broken = {**base, 'key': key(), 'advance_required': '999999.00'}
+    before = must(api.get('/api/cases', params={'view': 'all'}))['total']
+    assert operator.post('/api/production-requests', json=broken).status_code == 422
+    assert must(api.get('/api/cases', params={'view': 'all'}))['total'] == before
+    result = must(operator.post('/api/production-requests', json=base), 201)
+    assert result['kind'] == 'Solicitud' and result['mode'] == 'Producción'
+    assert result['owner_id'] == accounts['printer']['id'] and result['production']['stage'] == 'APPROVAL'
+    replay = must(operator.post('/api/production-requests', json=base), 201)
+    assert replay['id'] == result['id'] and replay['production']['id'] == result['production']['id']
+    reused = {**base, 'subject': 'Contenido diferente'}
+    assert operator.post('/api/production-requests', json=reused).status_code == 409
+    assert operator.get('/api/clients?q=Alta').status_code == 403
+    assert operator.get('/api/production-clients?q=Alta').status_code == 200
+
+
+def test_complete_delivery_fills_only_historical_pending_quantity(clients):
+    api = clients['admin']
+    _, case = create(api, 'Saldo histórico de entrega')
+    case = mutate(api, case, 'take')
+    case = mutate(api, case, 'convert', conversion())
+    order_id, item_id = case['production']['id'], case['items'][0]['id']
+    case = release_single_order(clients, case)
+    with SessionLocal.begin() as db:
+        db.add(Delivery(case_id=case['id'], item_id=item_id, quantity=Decimal('40'),
+                        delivered_at=datetime.now(timezone.utc).replace(tzinfo=None), receiver='Cliente',
+                        method='Histórico desconocido', evidence='Movimiento parcial histórico', actor_id=case['owner_id']))
+    case = must(api.get(f'/api/cases/{case["id"]}?production_id={order_id}'))
+    assert case['delivery_status'] == 'Parcial' and len(case['deliveries']) == 1
+    case = complete_delivery(api, case, order_id, 'Entrega (delivery)')
+    assert case['delivery_status'] == 'Completa' and len(case['deliveries']) == 2
+    assert sorted(row['quantity'] for row in case['deliveries']) == ['40.000', '60.000']
+    assert {row['method'] for row in case['deliveries']} == {'Histórico desconocido', 'Entrega (delivery)'}
+
+
+def test_concurrent_complete_delivery_creates_one_operation(clients):
+    api = clients['admin']
+    _, case = create(api, 'Concurrencia de entrega')
+    case = mutate(api, case, 'take')
+    case = mutate(api, case, 'convert', conversion())
+    case = release_single_order(clients, case)
+    payloads = [
+        {'version': case['version'], 'key': key(), 'production_id': case['production']['id'], 'method': method,
+         'receiver': 'Cliente', 'evidence': 'Concurrencia'}
+        for method in ('Retiro en local', 'Entrega (delivery)')
+    ]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(lambda payload: api.post(f"/api/cases/{case['id']}/deliveries/complete", json=payload), payloads))
+    assert sorted(response.status_code for response in responses) == [200, 409]
+    refreshed = must(api.get(f"/api/cases/{case['id']}"))
+    assert refreshed['delivery_status'] == 'Completa' and len(refreshed['deliveries']) == 1
+    assert len([event for event in refreshed['events'] if event['data'].get('action') == 'delivery_completed']) == 1
 
 
 def item():
@@ -89,25 +167,25 @@ def test_multiple_orders_keep_products_stages_deliveries_and_calendar_separate(c
     assert result['result']=='released' and set(result['released_orders'])=={f'OP-{first_id:05d}',f'OP-{second_id:05d}'}
     first_view=must(api.get(f'/api/cases/{c["id"]}?production_id={first_id}'))
     first_item=first_view['items'][0]
-    first_view=mutate(api,first_view,'deliveries',{'production_id':first_id,'item_id':first_item['id'],'quantity':'40','delivered_at':datetime.now(timezone.utc).isoformat(),'receiver':'Cliente','method':'Retiro','evidence':'Entrega parcial OP inicial'})
+    first_view=complete_delivery(api, first_view, first_id)
     second_view=must(api.get(f'/api/cases/{c["id"]}?production_id={second_id}'))
-    assert first_view['delivery_status']=='Parcial' and len(first_view['deliveries'])==1
+    assert first_view['delivery_status']=='Completa' and len(first_view['deliveries'])==2
     assert second_view['delivery_status']=='Pendiente' and not second_view['deliveries']
     assert second_view['production']['stage']=='READY'
 
     all_orders=must(api.get('/api/orders?view=production'))
     ready_orders=must(api.get('/api/orders?view=ready'))
     counts=must(api.get('/api/counts'))
-    assert all_orders['total']==2 and len(all_orders['items'])==2 and all_orders['count_type']=='órdenes'
-    assert ready_orders['total']==2 and {row['id'] for row in ready_orders['items']}=={first_id,second_id}
-    assert ready_orders['items'][0]['id']==first_id
-    assert ready_orders['items'][0]['pending_quantities'][0]['quantity']=='60.000'
-    assert counts['production_orders']==2 and counts['ready_orders']==2
+    assert all_orders['total']==1 and len(all_orders['items'])==1 and all_orders['count_type']=='órdenes'
+    assert all_orders['items'][0]['id']==second_id
+    assert ready_orders['total']==1 and {row['id'] for row in ready_orders['items']}=={second_id}
+    assert ready_orders['items'][0]['pending_quantities'][0]['quantity']=='2.000'
+    assert counts['production_orders']==1 and counts['ready_orders']==1
     assert must(api.get('/api/cases',params={'view':'production','stage':'PRINTING'}))['total']==0
 
     events=must(api.get('/api/calendar'))
     commitments=[e for e in events if e['type']=='Entrega comprometida']
-    assert len(commitments)==2 and {e['production_id'] for e in commitments}=={first_id,second_id}
+    assert len(commitments)==1 and {e['production_id'] for e in commitments}=={second_id}
     assert {e['stage'] for e in commitments}=={'Listo para entregar'}
 
 
@@ -444,7 +522,7 @@ def test_unassigned_pool_ignores_filters_and_take_persists_in_personal_views(cli
     assert must(api.get('/api/cases?view=mine'))['total']==1
     assert must(api.get('/api/cases?view=mine-action'))['total']==0
     assert must(api.get('/api/counts'))['mine']==1 and must(api.get('/api/counts'))['pool']==0
-    second_session=TestClient(app,headers={'X-Comgraf-Request':'1','X-Comgraf-Contract':'4','X-Comgraf-Build':'1.4.0'})
+    second_session=TestClient(app,headers={'X-Comgraf-Request':'1','X-Comgraf-Contract':'5','X-Comgraf-Build':'1.4.0'})
     must(second_session.post('/api/auth/login',json={'username':'admin','password':accounts['admin']['password']}))
     persisted=must(second_session.get('/api/cases?view=mine'))
     assert persisted['total']==1 and persisted['items'][0]['owner_id']==accounts['admin']['id']
@@ -490,10 +568,7 @@ def test_automatic_production_completion_waits_for_delivery_payment_and_tasks(cl
     assert must(api.get('/api/cases?view=finalized'))['total']==0
     future=(datetime.now(timezone.utc)+timedelta(days=5)).isoformat()
     c=mutate(api,c,'tasks',{'title':'Confirmar entrega final','owner_id':c['owner_id'],'due_at':future})
-    delivery={'item_id':c['items'][0]['id'],'quantity':'40','delivered_at':datetime.now(timezone.utc).isoformat(),'receiver':'Cliente','method':'Retiro','evidence':'Entrega parcial'}
-    c=mutate(api,c,'deliveries',delivery)
-    assert c['lifecycle']=='Activo' and c['delivery_status']=='Parcial'
-    c=mutate(api,c,'deliveries',{**delivery,'quantity':'60'})
+    c=complete_delivery(api, c, method='Retiro en local')
     assert c['lifecycle']=='Activo' and c['delivery_status']=='Completa'
     assert must(api.get('/api/cases?view=balances'))['total']==0
     assert must(api.get('/api/cases?view=mine'))['total']==1
@@ -517,8 +592,7 @@ def test_delivered_production_with_unpaid_balance_is_not_completed(clients):
     api=clients['admin'];_,c=create(api,'Entrega con saldo pendiente')
     c=mutate(api,c,'take');c=mutate(api,c,'convert',conversion())
     c=release_single_order(clients,c)
-    delivery={'item_id':c['items'][0]['id'],'quantity':'100','delivered_at':datetime.now(timezone.utc).isoformat(),'receiver':'Cliente','method':'Retiro','evidence':'Trabajo entregado'}
-    c=mutate(api,c,'deliveries',delivery)
+    c=complete_delivery(api, c)
     assert c['delivery_status']=='Completa' and c['balance']=='1000.00' and c['lifecycle']=='Activo'
     assert must(api.get('/api/cases?view=balances'))['total']==1
     assert must(api.get('/api/cases?view=finalized'))['total']==0
@@ -650,16 +724,13 @@ def test_weekly_pickup_followup_partial_and_full_delivery(clients):
     c=mutate(api,c,f'tasks/{pickup[0]["id"]}/complete',{'note':'Customer will pick up Friday','schedule_next_pickup':True})
     next_task=next(task for task in c['tasks'] if task['category']=='PICKUP' and task['done_at'] is None)
     assert datetime.fromisoformat(next_task['due_at'].replace('Z','+00:00')).date() >= (datetime.now(timezone.utc)+timedelta(days=6)).date()
-    delivery={'item_id':c['items'][0]['id'],'quantity':'40','delivered_at':datetime.now(timezone.utc).isoformat(),'receiver':'Customer','method':'Pickup','evidence':'Partial delivery'}
-    c=mutate(api,c,'deliveries',delivery)
-    assert next(task for task in c['tasks'] if task['id']==next_task['id'])['done_at'] is None
-    c=mutate(api,c,'deliveries',{**delivery,'quantity':'60'})
+    c=complete_delivery(api, c)
     assert c['delivery_status']=='Completa'
     assert next(task for task in c['tasks'] if task['id']==next_task['id'])['done_at'] is not None
     assert len([e for e in c['events'] if e['data'].get('action')=='pickup_followup_resolved'])==1
 
 
-def test_delivery_and_payment_are_one_idempotent_financial_operation(clients):
+def test_complete_delivery_is_idempotent_and_cannot_register_partial_quantities_or_payments(clients):
     api=clients['admin'];_,c=create(api,'Entrega con abono')
     c=mutate(api,c,'take');c=mutate(api,c,'convert',conversion())
     c=release_single_order(clients,c)
@@ -668,22 +739,22 @@ def test_delivery_and_payment_are_one_idempotent_financial_operation(clients):
     assert c['production']['stage']==stage and c['owner_id']==owner
     assert must(api.get('/api/cases?view=mine'))['total']==1
     assert must(api.get('/api/cases?view=action'))['total']==0
-    payload={'version':c['version'],'key':key(),'item_id':c['items'][0]['id'],'quantity':'40','delivered_at':datetime.now(timezone.utc).isoformat(),'receiver':'Cliente','method':'Retiro','evidence':'Recibo parcial','payment_amount':'100.00','payment_reference':'Recibo HNL 02'}
-    c=must(api.post(f'/api/cases/{c["id"]}/deliveries',json=payload))
-    replay=must(api.post(f'/api/cases/{c["id"]}/deliveries',json=payload))
-    assert replay['delivery_status']=='Parcial' and len(replay['deliveries'])==1
-    assert len(replay['ledger'])==2 and replay['balance']=='900.00'
-    bad={**payload,'version':replay['version'],'key':key(),'quantity':'1','payment_amount':'9999'}
-    assert api.post(f'/api/cases/{c["id"]}/deliveries',json=bad).status_code==422
+    payload={'version':c['version'],'key':key(),'production_id':c['production']['id'],'method':'Retiro en local','receiver':'Cliente','evidence':'Recibo 01'}
+    rejected=api.post(f'/api/cases/{c["id"]}/deliveries',json={'version':c['version'],'key':key(),'production_id':c['production']['id'],'item_id':c['items'][0]['id'],'quantity':'1','delivered_at':datetime.now(timezone.utc).isoformat(),'receiver':'Cliente','method':'Retiro','evidence':'Parcial'})
+    assert rejected.status_code==410
     unchanged=must(api.get(f'/api/cases/{c["id"]}'))
-    assert len(unchanged['deliveries'])==1 and len(unchanged['ledger'])==2
-    printer=clients['printer']
-    forbidden={**payload,'version':unchanged['version'],'key':key(),'quantity':'1','payment_amount':'10','payment_reference':'No permiso'}
-    assert printer.post(f'/api/cases/{c["id"]}/deliveries',json=forbidden).status_code==403
+    assert len(unchanged['deliveries'])==0 and len(unchanged['ledger'])==1
+    printer=clients['agent']
+    forbidden={**payload,'version':unchanged['version'],'key':key()}
+    assert printer.post(f'/api/cases/{c["id"]}/deliveries/complete',json=forbidden).status_code==403
     unchanged=must(api.get(f'/api/cases/{c["id"]}'))
-    assert len(unchanged['deliveries'])==1 and len(unchanged['ledger'])==2
-    final={**payload,'version':unchanged['version'],'key':key(),'quantity':'60','payment_amount':None,'payment_reference':None}
-    c=must(api.post(f'/api/cases/{c["id"]}/deliveries',json=final))
+    assert len(unchanged['deliveries'])==0 and len(unchanged['ledger'])==1
+    c=must(api.post(f'/api/cases/{c["id"]}/deliveries/complete',json=payload))
+    replay=must(api.post(f'/api/cases/{c["id"]}/deliveries/complete',json=payload))
+    assert replay['delivery_status']=='Completa' and len(replay['deliveries'])==1
+    assert len(replay['ledger'])==1 and replay['balance']=='1000.00'
+    final={**payload,'version':replay['version'],'key':key()}
+    assert api.post(f'/api/cases/{c["id"]}/deliveries/complete',json=final).status_code==409
     assert c['delivery_status']=='Completa' and c['production']['stage']=='READY'
     assert c['production']['result_label']=='Entregado' and c['production']['active_elapsed_seconds'] is None
     assert must(api.get('/api/cases?view=production'))['total']==0
@@ -741,7 +812,7 @@ def test_client_contact_relations_and_new_hnl_contract(clients):
     other=must(api.post('/api/clients',json={'name':'Otro cliente'}),201)
     contact=must(api.post(f'/api/clients/{customer["id"]}/contacts',json={'name':'Contacto comercial','phone':'9999'}),201)
     assert must(api.get(f'/api/clients/{customer["id"]}/contacts'))==[contact]
-    assert api.post('/api/cases',json={'client_id':other['id'],'contact_id':contact['id'],'subject':'Relación incorrecta','kind':'Cotización'}).status_code==422
+    assert api.post('/api/cases',json={'client_id':other['id'],'contact_id':contact['id'],'subject':'Relación incorrecta','kind':'Cotización', 'creation_context':'pool'}).status_code==422
     c=mutate(api,c,'take')
     quote_body={'version':c['version'],'key':key(),'items':[item()],'currency':'USD','valid_until':str(today()+timedelta(days=10))}
     assert api.post(f'/api/cases/{c["id"]}/quotes',json=quote_body).status_code==422
@@ -824,12 +895,10 @@ def test_production_quote_delivery_debt_and_idempotent_payment(clients,accounts)
     assert result['result']=='released'
     c=must(api.get(f'/api/cases/{c["id"]}'))
     assert c['delivery_status']=='Pendiente'
-    delivery={'item_id':c['items'][0]['id'],'quantity':'40','delivered_at':datetime.now(timezone.utc).isoformat(),'receiver':'María','method':'Retiro','evidence':'Recibo firmado 01'}
-    c=mutate(api,c,'deliveries',delivery)
-    assert c['delivery_status']=='Parcial' and c['production']['stage']=='READY'
+    c=complete_delivery(api, c)
+    assert c['delivery_status']=='Completa' and c['production']['stage']=='READY' and c['lifecycle']=='Activo'
     c=mutate(api,c,'attention',{'status':'Cerrado'})
     assert must(api.get('/api/cases?view=balances'))['total']==1
-    c=mutate(api,c,'deliveries',{**delivery,'quantity':'60'})
     assert c['production']['stage']=='READY' and c['delivery_status']=='Completa' and c['production']['result_label']=='Entregado' and c['status']=='Cerrado'
     assert Decimal(c['overdue_balance'])==Decimal('900')
     c=mutate(api,c,'payments',{'amount':'900','reference':'Recibo 002'})
@@ -937,7 +1006,7 @@ def test_cancellation_without_finance_queues_review_then_resolves(clients,accoun
         db.add(Role(name=role_name,permissions=['production']))
         user=User(username='cancelador',name='Cancelador',password_hash='unused',roles=[role_name],capacity=20)
         db.add(user);db.flush(); uid=user.id
-    api=TestClient(app,headers={'X-Comgraf-Request':'1','X-Comgraf-Contract':'4'})
+    api=TestClient(app,headers={'X-Comgraf-Request':'1','X-Comgraf-Contract':'5'})
     with SessionLocal.begin() as db:
         user=db.get(User,uid)
         user.password_hash=__import__('app.security',fromlist=['passwords']).passwords.hash('cancelador-password-2026')

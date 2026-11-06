@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import fs from 'node:fs'
 import path from 'node:path'
 const credentials = JSON.parse(fs.readFileSync(path.resolve('../.runtime/e2e.json'), 'utf8'))
-const headers = { 'X-Comgraf-Request': '1', 'X-Comgraf-Contract': '4', 'X-Comgraf-Build': '1.4.0' }
+const headers = { 'X-Comgraf-Request': '1', 'X-Comgraf-Contract': '5', 'X-Comgraf-Build': '1.4.0' }
 let errors = []
 test.beforeEach(async ({ page }) => {
   errors = []
@@ -24,7 +24,7 @@ async function createCase(page, subject) {
   const customer = await client.json()
   const response = await page.request.post('/api/cases', {
     headers,
-    data: { client_id: customer.id, subject, kind: 'Cotización' },
+    data: { client_id: customer.id, subject, kind: 'Cotización', creation_context: 'pool' },
   })
   expect(response.ok()).toBeTruthy()
   const record = await response.json()
@@ -75,7 +75,7 @@ test('tomar un caso sin asignar desde la bandeja actualiza la fila', async ({ pa
   const client = await clientResponse.json()
   const response = await page.request.post('/api/cases', {
     headers,
-    data: { client_id: client.id, subject, kind: 'Cotización' },
+    data: { client_id: client.id, subject, kind: 'Cotización', creation_context: 'pool' },
   })
   expect(response.ok()).toBeTruthy()
   await page.goto('/inbox/pool')
@@ -460,7 +460,7 @@ test('autocompletado conserva relaciones y los datos al crear cliente en línea'
   await expect(page.getByRole('heading', { name: 'No perder este asunto' })).toBeVisible()
 })
 
-test('cotización aceptada, producción activa, bloqueo, entrega parcial y cobranza', async ({
+test('cotización aceptada, producción activa, bloqueo, entrega completa y cobranza separada', async ({
   page,
 }) => {
   test.setTimeout(90000)
@@ -558,7 +558,6 @@ test('cotización aceptada, producción activa, bloqueo, entrega parcial y cobra
   expect(scanResponse.ok).toBeTruthy()
   expect(scanResponse.data.result).toBe('released')
   await page.reload()
-  await expect(page.getByRole('button', { name: 'Registrar entrega', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Bloquear' }).click()
   dialog = page.getByRole('dialog')
   await dialog.getByLabel('Motivo').fill('Inspección preventiva del pedido.')
@@ -568,61 +567,38 @@ test('cotización aceptada, producción activa, bloqueo, entrega parcial y cobra
   await dialog.getByLabel('Motivo').fill('Inspección completada; material conforme.')
   await dialog.getByRole('button', { name: 'Guardar' }).click()
   await page.getByRole('button', { name: 'Entregas y cobros' }).click()
-  await page.getByRole('button', { name: 'Registrar entrega' }).click()
+  await page.getByRole('button', { name: 'Registrar entrega de OP completa' }).click()
   dialog = page.getByRole('dialog')
-  await dialog.getByLabel('Partida').selectOption({ index: 1 })
-  await dialog.getByLabel('Cantidad entregada').fill('40')
-  await dialog.getByLabel(/Fecha y hora/).fill('2026-10-16T10:00')
-  await dialog.getByLabel('Recibido por').fill('DEMO · María')
-  await dialog.getByLabel('Modalidad').fill('Retiro')
-  await dialog
-    .getByLabel('Evidencia / referencia del recibo')
-    .fill('Comprobante E2E entrega parcial 40.')
-  await dialog.getByLabel('Registrar pago con esta entrega').check()
-  await expect(dialog.getByLabel(/Abono o liquidación \(HNL\)/)).toHaveValue('900.00')
-  await dialog.getByLabel(/Abono o liquidación \(HNL\)/).fill('100')
-  await dialog.getByLabel('Referencia del pago').fill('Recibo combinado E2E')
+  await dialog.getByLabel('Modalidad').selectOption('Retiro en local')
+  await dialog.getByLabel('Recibido por (opcional)').fill('DEMO · María')
+  await dialog.getByLabel('Evidencia / referencia (opcional)').fill('Comprobante E2E entrega completa.')
   await dialog.getByRole('button', { name: 'Guardar' }).click()
-  await expect(page.getByText('Comprobante E2E entrega parcial 40.')).toBeVisible()
+  await expect(page.getByText('Comprobante E2E entrega completa.')).toBeVisible()
   await page.getByRole('button', { name: 'Cerrar atención' }).click()
   await expect(page.getByRole('button', { name: 'Abrir atención' })).toBeVisible()
-  await expect(page.getByText('Comprobante E2E entrega parcial 40.', { exact: true })).toBeVisible()
+  await expect(page.getByText('Comprobante E2E entrega completa.', { exact: true })).toBeVisible()
   const full = await page.request.get(`/api/cases/${record.id}`)
   expect(full.ok()).toBeTruthy()
   const current = await full.json()
   expect(current.mode).toBe('Producción')
   expect(current.production.stage).toBe('READY')
-  expect(current.delivery_status).toBe('Parcial')
-  expect(current.balance).toBe('800.00')
+  expect(current.delivery_status).toBe('Completa')
+  expect(current.balance).toBe('900.00')
   expect(current.status).toBe('Cerrado')
-  expect(current.ledger.filter((entry) => entry.kind === 'Abono')).toHaveLength(1)
+  expect(current.ledger.filter((entry) => entry.kind === 'Anticipo')).toHaveLength(1)
+  expect(current.ledger.filter((entry) => entry.kind === 'Abono')).toHaveLength(0)
   expect(current.production.authorized_at).toBeNull()
   expect(current.production.specs_snapshot.items[0].specs.material).toBe('Couché 300 g')
 
-  await page.getByRole('button', { name: 'Registrar entrega' }).click()
-  dialog = page.getByRole('dialog')
-  await dialog.getByLabel('Partida').selectOption({ index: 1 })
-  await dialog.getByLabel('Cantidad entregada').fill('60')
-  await dialog.getByLabel(/Fecha y hora/).fill('2026-10-17T10:00')
-  await dialog.getByLabel('Recibido por').fill('DEMO · María')
-  await dialog.getByLabel('Modalidad').fill('Retiro')
-  await dialog
-    .getByLabel('Evidencia / referencia del recibo')
-    .fill('Comprobante E2E entrega final y pago.')
-  await dialog.getByLabel('Registrar pago con esta entrega').check()
-  await expect(dialog.getByLabel(/Abono o liquidación \(HNL\)/)).toHaveValue('800.00')
-  await dialog.getByLabel('Referencia del pago').fill('Liquidación E2E')
-  await dialog.getByRole('button', { name: 'Guardar' }).click()
-  await expect(page.getByRole('dialog')).toHaveCount(0)
   const settled = await page.request.get(`/api/cases/${record.id}`)
   expect(settled.ok()).toBeTruthy()
   const finalRecord = await settled.json()
   expect(finalRecord.delivery_status).toBe('Completa')
   expect(finalRecord.production.stage).toBe('READY')
   expect(finalRecord.production.active_elapsed_seconds).toBeNull()
-  expect(finalRecord.balance).toBe('0.00')
-  expect(finalRecord.payment_status).toBe('Pagado')
-  expect(finalRecord.ledger.filter((entry) => entry.kind === 'Abono')).toHaveLength(2)
+  expect(finalRecord.balance).toBe('900.00')
+  expect(finalRecord.payment_status).not.toBe('Pagado')
+  expect(finalRecord.ledger.filter((entry) => entry.kind === 'Abono')).toHaveLength(0)
 })
 
 test('note template appends to an existing internal draft', async ({ page }) => {

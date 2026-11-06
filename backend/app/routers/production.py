@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from ..db import get_db
 from ..models import Attachment
 from .. import schemas as s, services as service
-from ..security import current_user, can
+from ..security import current_user, can, require
 from ..repository import get_case, row
 from ..config import settings
 from .common import case_response
@@ -56,7 +56,13 @@ def refund(case_id: int, data: s.RefundInput, user=Depends(current_user), db=Dep
 
 @router.post('/cases/{case_id}/deliveries')
 def deliver(case_id: int, data: s.DeliveryWithPaymentInput, user=Depends(current_user), db=Depends(get_db, scope='function')):
-    return case_response(db, user, service.deliver(db, user, case_id, data), data.production_id)
+    require(db, user, 'production')
+    raise HTTPException(410, 'El registro por partida y cantidad ya no está disponible. Usa la entrega completa de una OP.')
+
+
+@router.post('/cases/{case_id}/deliveries/complete')
+def deliver_complete(case_id: int, data: s.CompleteDeliveryInput, user=Depends(current_user), db=Depends(get_db, scope='function')):
+    return case_response(db, user, service.deliver_complete(db, user, case_id, data), data.production_id)
 
 
 @router.post('/cases/{case_id}/payments')

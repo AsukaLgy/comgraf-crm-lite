@@ -250,3 +250,14 @@ table{font-size:13px}th{font-size:12px;color:#475569}td small{font-size:13px}
   body:has(.order-preview-sheet) .order-preview-panel .panel-body{display:block!important;margin:0!important;padding:0!important;border:0!important;width:auto!important;max-width:none!important;overflow:visible!important;box-shadow:none!important}
   body:has(.order-preview-sheet) .order-preview-sheet{margin:0!important;padding:0!important;border:0!important;box-shadow:none!important}
 }
+
+/* Formularios integrados; los estilos permanecen fuera de las plantillas impresas. */
+dialog.wide{width:min(980px,calc(100vw - 28px));max-height:min(92dvh,1000px);overflow:auto}
+dialog .field>span{font-size:13px;line-height:1.35;color:#334650;font-weight:600}
+dialog .field input,dialog .field select,dialog .field textarea{min-height:40px;font-size:14px}
+dialog .integrated-create-section{padding:8px 0 18px;border-bottom:1px solid var(--line);margin-bottom:16px}
+dialog .integrated-create-section:last-of-type{border-bottom:0;margin-bottom:0}
+dialog .integrated-create-section>h3{font-size:16px;margin-bottom:12px}
+dialog .integrated-create-section .form-grid{gap:14px}
+dialog .integrated-create-section .autocomplete{min-width:min(100%,280px)}
+@media(max-width:700px){dialog.wide{width:calc(100vw - 16px);max-height:94dvh;padding:14px}dialog .integrated-create-section .form-grid{grid-template-columns:1fr}dialog .integrated-create-section .field{max-width:none;min-width:0}}

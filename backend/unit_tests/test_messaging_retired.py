@@ -16,10 +16,10 @@ def test_old_or_placeholder_case_types_are_not_new_case_inputs(kind):
 
 @pytest.mark.parametrize('kind', ['Cotización', 'Solicitud', 'Reclamo'])
 def test_new_case_input_needs_no_origin_or_relation(kind):
-    value = CaseInput(client_id=1, subject='Prueba', kind=kind)
+    value = CaseInput(client_id=1, subject='Prueba', kind=kind, creation_context='pool')
     assert value.model_dump() == {
         'client_id': 1, 'contact_id': None, 'related_case_id': None, 'subject': 'Prueba',
-        'description': '', 'kind': kind, 'priority': 'Normal',
+        'description': '', 'kind': kind, 'priority': 'Normal', 'creation_context': 'pool',
     }
 
 
@@ -31,7 +31,7 @@ def test_new_case_input_needs_no_origin_or_relation(kind):
     ('post', '/api/mail/pending/1/classify'),
 ])
 def test_old_mutation_urls_are_gone(method, path):
-    client = TestClient(app, headers={'X-Comgraf-Request': '1', 'X-Comgraf-Contract': '4'})
+    client = TestClient(app, headers={'X-Comgraf-Request': '1', 'X-Comgraf-Contract': '5'})
     response = getattr(client, method)(path, json={}) if method != 'delete' else client.delete(path)
     client.close()
     assert response.status_code == 410

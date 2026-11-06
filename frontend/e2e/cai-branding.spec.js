@@ -4,7 +4,7 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 const credentials = JSON.parse(fs.readFileSync(path.resolve('../.runtime/e2e.json'), 'utf8'))
-const headers = { 'X-Comgraf-Request': '1', 'X-Comgraf-Contract': '4', 'X-Comgraf-Build': '1.4.0' }
+const headers = { 'X-Comgraf-Request': '1', 'X-Comgraf-Contract': '5', 'X-Comgraf-Build': '1.4.0' }
 
 test('CAI presenta etiquetas y pulgadas sin añadir cálculos a la hoja impresa', async ({ page }) => {
   const errors = []
@@ -23,7 +23,7 @@ test('CAI presenta etiquetas y pulgadas sin añadir cálculos a la hoja impresa'
     return response.json()
   }
   const client = await post('/clients', { name: 'E2E · CAI ' + Date.now() })
-  let record = await post('/cases', { client_id: client.id, subject: 'E2E · Etiquetas CAI', kind: 'Solicitud' })
+  let record = await post('/cases', { client_id: client.id, subject: 'E2E · Etiquetas CAI', kind: 'Solicitud', creation_context: 'personal' })
   record = await post(`/cases/${record.id}/take`, { version: record.version, key: randomUUID() })
   record = await post(`/cases/${record.id}/convert`, {
     version: record.version, key: randomUUID(), committed_date: '2099-12-31',

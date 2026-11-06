@@ -81,7 +81,7 @@ def test_cai_contact_is_scoped_and_quote_conversion_preserves_specs(clients):
     other=must(api.post('/api/clients',json={'name':'Otra persona','phones':[],'emails':[]}),201)
     foreign=must(api.post(f"/api/clients/{other['id']}/contacts",json={'name':'Contacto ajeno'}),201)
     # Create a second active request; the out-of-scope contact must not be attachable.
-    case2=must(api.post('/api/cases',json={'client_id':customer['id'],'subject':'Otra orden CAI','kind':'Solicitud'}),201)
+    case2=must(api.post('/api/cases',json={'client_id':customer['id'],'subject':'Otra orden CAI','kind':'Solicitud','creation_context':'pool'}),201)
     invalid=api.post(f"/api/cases/{case2['id']}/convert",json={**conversion(),'items':[cai_item()],'contact_id':foreign['id'],'version':case2['version'],'key':key()})
     assert invalid.status_code==422 and 'no pertenece' in invalid.text
 

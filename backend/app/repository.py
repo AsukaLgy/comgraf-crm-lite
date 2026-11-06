@@ -428,7 +428,8 @@ def _case_projection(db, user, entry, financial):
         result['production']['stage_label'] = STAGE_LABELS.get(production.stage) if production.stage else 'Pendiente de clasificación'
     result['delivery_status'] = delivery_state
     orders = db.scalars(select(Production).where(Production.case_id == case.id).order_by(Production.id)).all()
-    result['productions'] = [{'id': order.id, 'order_number': f'OP-{order.id:05d}', 'stage': order.stage,
+    result['productions'] = [{'id': order.id, 'order_number': f'OP-{order.id:05d}', 'description': ', '.join(
+            list(dict.fromkeys(db.scalars(select(Item.product).where(Item.production_id == order.id).order_by(Item.id)).all()))[:2]), 'stage': order.stage,
         'stage_label': STAGE_LABELS.get(order.stage) if order.stage else 'Pendiente de clasificación',
         'committed_date': str(order.committed_date) if order.committed_date else None,
         'delivery_status': delivery_status(db, case.id, order.id), 'cancelled_at': row(order)['cancelled_at'],

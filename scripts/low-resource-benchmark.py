@@ -20,7 +20,7 @@ import urllib.request
 import uuid
 from datetime import date, timedelta
 
-HEADERS = {'X-Comgraf-Request': '1', 'X-Comgraf-Contract': '4', 'X-Comgraf-Build': 'lan-light'}
+HEADERS = {'X-Comgraf-Request': '1', 'X-Comgraf-Contract': '5', 'X-Comgraf-Build': 'lan-light'}
 TLS_CONTEXT = ssl.create_default_context()
 
 
