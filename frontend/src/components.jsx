@@ -1,4 +1,4 @@
-import { cloneElement, useEffect, useRef, useState } from 'react'
+import { cloneElement, useEffect, useId, useRef, useState } from 'react'
 import { X, AlertCircle, LoaderCircle, Inbox } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api, uid } from './api'
@@ -87,6 +87,7 @@ export function Panel({ title, action, children, className = '' }) {
 }
 export function Modal({ title, onClose, children, wide = false, busy = false }) {
   const ref = useRef()
+  const titleId = useId()
   useEffect(() => {
     const prior = document.activeElement
     ref.current.showModal()
@@ -95,6 +96,7 @@ export function Modal({ title, onClose, children, wide = false, busy = false }) 
   return (
     <dialog
       ref={ref}
+      aria-labelledby={titleId}
       className={wide ? 'wide' : ''}
       onCancel={(e) => {
         e.preventDefault()
@@ -102,7 +104,7 @@ export function Modal({ title, onClose, children, wide = false, busy = false }) 
       }}
     >
       <header>
-        <h2>{title}</h2>
+        <h2 id={titleId}>{title}</h2>
         <button
           type="button"
           className="icon-button"

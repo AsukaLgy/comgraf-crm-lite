@@ -251,6 +251,26 @@ table{font-size:13px}th{font-size:12px;color:#475569}td small{font-size:13px}
 
 /* Formularios integrados; los estilos permanecen fuera de las plantillas impresas. */
 dialog.wide{width:min(980px,calc(100vw - 28px));max-height:min(92dvh,1000px);overflow:auto}
+.client-actions-menu{position:relative;flex-shrink:0;z-index:10}
+.client-actions-menu>button{white-space:nowrap}
+.client-actions-list{position:absolute;right:0;top:calc(100% + 6px);width:max-content;min-width:190px;max-width:calc(100vw - 24px);padding:5px;background:#fff;border:1px solid var(--line);border-radius:7px;box-shadow:0 12px 30px #182d3433;z-index:20}
+.client-actions-list button{display:flex;width:100%;justify-content:flex-start;border:0;white-space:nowrap;min-height:40px}
+.client-delete-option{color:#972e38;background:#fff}
+.client-delete-option:hover{background:#fff1f2;color:#85242f}
+dialog.wide:has(.delete-dialog-body){width:min(620px,calc(100vw - 24px))}
+.delete-dialog-body{display:grid;gap:14px}
+.delete-dialog-body>p,.delete-scope p{margin:0}
+.delete-identity{display:grid;gap:4px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.delete-identity strong{font-size:17px;color:var(--ink)}
+.delete-identity span{color:var(--muted)}
+.delete-scope{display:grid;gap:8px;line-height:1.5}
+.delete-scope ul{margin:0;padding-left:21px;max-height:120px;overflow:auto}
+.delete-scope-check{display:flex;align-items:flex-start;gap:9px;padding:10px 12px;border:1px solid var(--line);border-radius:6px;font-weight:600;cursor:pointer}
+.delete-scope-check input{margin-top:3px;flex-shrink:0}
+.delete-warning{font-size:12px;color:#8a3439}
+.destructive-button{background:#a52c37;border-color:#a52c37;color:white}
+.destructive-button:hover{background:#84232d;border-color:#84232d;color:white}
+.destructive-button:disabled{background:#a52c37;color:white}
 dialog .field>span{font-size:13px;line-height:1.35;color:#334650;font-weight:600}
 dialog .field input,dialog .field select,dialog .field textarea{min-height:40px;font-size:14px}
 dialog .integrated-create-section{padding:8px 0 18px;border-bottom:1px solid var(--line);margin-bottom:16px}

@@ -30,8 +30,8 @@ def client_delete_preview(client_id: int, user=Depends(current_user), db=Depends
 @router.post('/{client_id}/delete-definitively')
 def client_delete_confirm(client_id: int, data: ClientDeleteConfirmation, background: BackgroundTasks, user=Depends(current_user), db=Depends(get_db, scope='function')):
     require_admin(user)
-    if data.confirmation != f'CLIENTE-{client_id}':
-        raise HTTPException(422, 'Escribe el identificador del cliente para confirmar')
+    if data.confirmation.strip().casefold() != 'comgraf':
+        raise HTTPException(422, 'Para confirmar la eliminación definitiva, escribe comgraf')
     delete_client(db, user, client_id, data.preview, data.include_cases)
     background.add_task(retry_file_cleanup)
     return {'deleted': True}

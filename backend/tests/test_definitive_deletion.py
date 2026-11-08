@@ -26,7 +26,7 @@ def test_client_requires_explicit_scope_and_rechecks_preview(clients):
     customer, case = create(admin, 'Solicitud asociada')
     url = f"/api/clients/{customer['id']}"
     preview = must(admin.get(url + '/delete-preview'))
-    payload = {'preview': preview, 'confirmation': f"CLIENTE-{customer['id']}"}
+    payload = {'preview': preview, 'confirmation': 'comgraf'}
     assert admin.post(url + '/delete-definitively', json=payload).status_code == 409
     assert admin.get(f"/api/cases/{case['id']}").status_code == 200
     must(admin.post('/api/cases', json={'client_id': customer['id'], 'subject': 'Nueva dependencia', 'kind': 'Solicitud', 'creation_context': 'pool'}), 201)
@@ -42,3 +42,20 @@ def test_rtn_keeps_leading_zeroes(clients):
     result = must(admin.post('/api/clients', json={'name': 'Cliente de prueba', 'rtn': '00123456789012'}), 201)
     assert result['rtn'] == '00123456789012'
     assert admin.post('/api/clients', json={'name': 'RTN incompleto', 'rtn': '0012'}).status_code == 422
+
+
+def test_client_confirmation_word_and_admin_permission(clients):
+    admin = clients['admin']
+    customer = must(admin.post('/api/clients', json={'name': 'Confirmación ficticia'}), 201)
+    url = f"/api/clients/{customer['id']}"
+    preview = must(admin.get(url + '/delete-preview'))
+    for word in ('', 'com', 'comgraf adicional', 'acomgraf', 'CLIENTE-' + str(customer['id'])):
+        assert admin.post(url + '/delete-definitively', json={'preview': preview, 'confirmation': word}).status_code == 422
+    assert clients['agent'].post(url + '/delete-definitively', json={'preview': preview, 'confirmation': 'comgraf'}).status_code == 403
+    assert admin.get(url).status_code == 200
+    for word in (' COMGRAF ', 'ComGraf', 'comgraf'):
+        current = must(admin.post('/api/clients', json={'name': 'Confirmación ficticia ' + word.strip()}), 201)
+        current_url = f"/api/clients/{current['id']}"
+        current_preview = must(admin.get(current_url + '/delete-preview'))
+        must(admin.post(current_url + '/delete-definitively', json={'preview': current_preview, 'confirmation': word}))
+        assert admin.get(current_url).status_code == 404

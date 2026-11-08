@@ -35,7 +35,7 @@ def preview_cases(db, cases):
 
 def preview_client(db, client):
     cases = db.scalars(select(Case).where(Case.client_id == client.id).order_by(Case.id)).all()
-    return {'client': {'id': client.id, 'name': client.name, 'version': client.version},
+    return {'client': {'id': client.id, 'name': client.name, 'rtn': client.rtn, 'version': client.version},
             'contacts': db.scalar(select(func.count()).select_from(Contact).where(Contact.client_id == client.id)),
             **preview_cases(db, cases)}
 

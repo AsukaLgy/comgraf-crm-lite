@@ -842,7 +842,7 @@ export default function CasePage({ user, print = false }) {
           )}
         />
       )}
-      {modal?.type === 'delete' && <DeleteDialog kind="case" id={id} onClose={close} onDeleted={() => nav('/inbox/mine')}/>}
+      {modal?.type === 'delete' && <DeleteDialog key={id} kind="case" id={id} onClose={close} onDeleted={() => nav('/inbox/mine')}/>}
     </>
   )
 }
