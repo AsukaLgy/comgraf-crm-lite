@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, can } from './api'
 import { ErrorBox, Field, FormDialog, Select } from './components'
+import { validateRtn } from './rtn'
+import ClientIdentityFields from './ClientIdentityFields'
 import { CASE_PRIORITIES } from './domain'
 
 const CASE_KINDS = [
@@ -52,7 +54,8 @@ export default function NewCase({ onClose, clientId, client: initialClient, user
         })
 
         await queryClient.invalidateQueries()
-        navigate(`/cases/${record.id}`)
+        const from = creationContext === 'pool' ? '/inbox/pool' : '/inbox/mine'
+        navigate(`/cases/${record.id}?from=${encodeURIComponent(from)}&return=${encodeURIComponent(from)}`)
       }}
       render={(values, setValue) => (
         <>
@@ -122,7 +125,7 @@ export function ClientAutocomplete({ user, selectedId, initialClient, onSelect, 
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const [createOpen, setCreateOpen] = useState(false)
-  const [draft, setDraft] = useState({ name: '', company: '', phone: '', email: '' })
+  const [draft, setDraft] = useState({ name: '', company: '', rtn: '', phone: '', email: '' })
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState(null)
   const createLock = useRef(false)
@@ -152,11 +155,13 @@ export function ClientAutocomplete({ user, selectedId, initialClient, onSelect, 
     setCreateError(null)
 
     try {
+      validateRtn(draft.rtn)
       const client = await api('/clients', {
         method: 'POST',
         body: {
           name: draft.name.trim(),
           company: draft.company.trim(),
+          rtn: draft.rtn,
           phones: draft.phone.trim() ? [draft.phone.trim()] : [],
           emails: draft.email.trim() ? [draft.email.trim()] : [],
           addresses: [],
@@ -207,9 +212,10 @@ export function ClientAutocomplete({ user, selectedId, initialClient, onSelect, 
 
   return (
     <div className="field autocomplete" ref={root}>
-      <label htmlFor={id}>Cliente</label>
+      <label htmlFor={id}>Cliente <span className="required-mark" aria-hidden="true">*</span></label>
       <input
         id={id}
+        aria-required="true"
         role="combobox"
         aria-autocomplete="list"
         aria-expanded={open}
@@ -228,6 +234,7 @@ export function ClientAutocomplete({ user, selectedId, initialClient, onSelect, 
           setActiveIndex(0)
         }}
       />
+      <small>* Campo obligatorio: selecciona un cliente de la lista.</small>
       <ErrorBox error={search.error || createError} />
       {open && (
         <div className="suggestion-list" id={`${id}-suggestions`} role="listbox">
@@ -272,17 +279,7 @@ export function ClientAutocomplete({ user, selectedId, initialClient, onSelect, 
       )}
       {createOpen && (
         <div className="inline-create">
-          <Field
-            label="Nombre"
-            required
-            value={draft.name}
-            onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-          />
-          <Field
-            label="Empresa (opcional)"
-            value={draft.company}
-            onChange={(event) => setDraft({ ...draft, company: event.target.value })}
-          />
+          <ClientIdentityFields values={draft} set={(key, value) => setDraft(current => ({ ...current, [key]: value }))}/>
           <Field
             label="Teléfono (opcional)"
             value={draft.phone}

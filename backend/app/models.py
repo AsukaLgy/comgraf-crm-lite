@@ -57,6 +57,22 @@ class Client(Base):
     created_at = Column(DateTime, nullable=False, default=now)
 
 
+class DeletionAudit(Base):
+    __tablename__ = 'deletion_audit'
+    id = Column(Integer, primary_key=True)
+    actor_id = Column(Integer, nullable=False)
+    deleted_at = Column(DateTime, nullable=False, default=now)
+    record_type = Column(String(20), nullable=False)
+    record_id = Column(Integer, nullable=False)
+
+
+class FileCleanup(Base):
+    __tablename__ = 'file_cleanup'
+    id = Column(Integer, primary_key=True)
+    storage_key = Column(String(80), nullable=False, unique=True)
+    attempts = Column(Integer, nullable=False, default=0)
+
+
 class Contact(Base):
     __tablename__ = 'contacts'
     id = Column(Integer, primary_key=True)

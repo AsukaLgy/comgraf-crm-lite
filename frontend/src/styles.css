@@ -233,22 +233,20 @@ table{font-size:13px}th{font-size:12px;color:#475569}td small{font-size:13px}
 .order-preview-sheet{border:1px solid var(--line);box-shadow:0 8px 24px #21323d16;max-width:100%}
 .order-preview-panel .cai-print{width:100%;padding:18px}
 
+.required-mark{color:#9a2630;font-weight:800}.required-help{font-size:10px}
+.autocomplete:has(.inline-create){grid-column:1/-1}.inline-create{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:20px;margin-top:12px;background:#f7faf9;border:1px solid var(--line);border-radius:8px}.inline-create .field{min-width:0}@media(max-width:600px){.inline-create{grid-template-columns:1fr}}
+.print-document{background:white;min-height:100vh}.print-document-actions{display:flex;gap:8px;padding:12px 20px}.print-document .print-sheet{box-shadow:none;border:0}
+@page{size:8.5in 5.5in;margin:0.28in}
 @media print{
-  body:has(.order-preview-sheet) .app-shell{display:block}
-  body:has(.order-preview-sheet) .app-shell>:not(.workspace-main),
-  body:has(.order-preview-sheet) .workspace-main>:not(.main-content),
-  body:has(.order-preview-sheet) .main-content>:not(.case-grid),
-  body:has(.order-preview-sheet) .case-grid>:not(.case-main),
-  body:has(.order-preview-sheet) .case-main>:not(.order-preview-panel),
-  body:has(.order-preview-sheet) .order-preview-panel .panel-title{display:none!important}
-  body:has(.order-preview-sheet) .workspace-main,
-  body:has(.order-preview-sheet) .main-content,
-  body:has(.order-preview-sheet) .case-grid,
-  body:has(.order-preview-sheet) .case-main,
-  body:has(.order-preview-sheet) .order-preview-panel,
-  body:has(.order-preview-sheet) .order-preview-panel .panel,
-  body:has(.order-preview-sheet) .order-preview-panel .panel-body{display:block!important;margin:0!important;padding:0!important;border:0!important;width:auto!important;max-width:none!important;overflow:visible!important;box-shadow:none!important}
-  body:has(.order-preview-sheet) .order-preview-sheet{margin:0!important;padding:0!important;border:0!important;box-shadow:none!important}
+  body{background:white}.print-document-actions{display:none!important}
+  .print-document .print-sheet{width:auto;max-width:none;margin:0;padding:0;font-size:12pt;line-height:1.25}
+  .print-document .print-sheet h1{font-size:16pt}.print-document .print-sheet h2{font-size:13pt}.print-document .print-sheet h3{font-size:12pt}
+  .print-document .cai-print-header{padding-bottom:1mm;margin-bottom:1mm}
+  .print-document .cai-qr{min-height:0}
+  .print-document .cai-print .cai-client,.print-document .cai-print .cai-item{padding:1mm 0}
+  .print-document .print-sheet section{padding:2mm 0;break-inside:auto}
+  .print-document .cai-print .cai-item p{font-size:12pt}
+  .print-document .cai-print{page:cai}
 }
 
 /* Formularios integrados; los estilos permanecen fuera de las plantillas impresas. */

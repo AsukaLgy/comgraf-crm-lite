@@ -42,7 +42,7 @@ export default function CasePrintSheet({ id, record, person, preview = false }) 
     return (
       <article className={`print-sheet cai-print${preview ? ' order-preview-sheet' : ''}`}>
         {!preview && <div className="print-actions">
-          <button onClick={() => window.print()}>
+          <button onClick={() => window.open(`/cases/${id}/print?production_id=${production.id}`, '_blank', 'noopener')}>
             <Printer size={16} />
             Imprimir / Guardar PDF
           </button>
@@ -152,7 +152,6 @@ export default function CasePrintSheet({ id, record, person, preview = false }) 
         })}
         {production.instructions && (
           <section className="cai-item">
-            <h3>{production.order_number} · Instrucciones de producción</h3>
             {printTextChunks(production.instructions).map((chunk, chunkIndex) => (
               <p className="prewrap cai-observations" key={chunkIndex}>
                 <b>
@@ -170,7 +169,7 @@ export default function CasePrintSheet({ id, record, person, preview = false }) 
   return (
     <article className={`print-sheet${preview ? ' order-preview-sheet' : ''}`}>
       {!preview && <div className="print-actions">
-        <button onClick={() => window.print()}>
+        <button onClick={() => window.open(`/cases/${id}/print?production_id=${production?.id}`, '_blank', 'noopener')}>
           <Printer size={16} />
           Imprimir / Guardar PDF
         </button>

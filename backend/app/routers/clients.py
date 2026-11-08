@@ -6,8 +6,35 @@ from ..models import Client, Contact
 from ..schemas import ClientInput, ClientUpdate, ContactInput
 from ..security import current_user, require
 from ..repository import client_search_text, normalize, row, cases_list, get_case, case_detail
+from ..deletion import require_admin, preview_client, delete_client, retry_file_cleanup
+from fastapi import BackgroundTasks
+from pydantic import BaseModel
+
+
+class ClientDeleteConfirmation(BaseModel):
+    preview: dict
+    confirmation: str
+    include_cases: bool = False
 
 router = APIRouter(prefix='/api/clients', tags=['Clientes'])
+
+
+@router.get('/{client_id}/delete-preview')
+def client_delete_preview(client_id: int, user=Depends(current_user), db=Depends(get_db, scope='function')):
+    require_admin(user)
+    client = db.get(Client, client_id)
+    if not client: raise HTTPException(404, 'El cliente ya no existe')
+    return preview_client(db, client)
+
+
+@router.post('/{client_id}/delete-definitively')
+def client_delete_confirm(client_id: int, data: ClientDeleteConfirmation, background: BackgroundTasks, user=Depends(current_user), db=Depends(get_db, scope='function')):
+    require_admin(user)
+    if data.confirmation != f'CLIENTE-{client_id}':
+        raise HTTPException(422, 'Escribe el identificador del cliente para confirmar')
+    delete_client(db, user, client_id, data.preview, data.include_cases)
+    background.add_task(retry_file_cleanup)
+    return {'deleted': True}
 
 
 def validate_rtn(value: str):

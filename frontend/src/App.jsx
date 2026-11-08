@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { NavLink, Routes, Route, useNavigate, useParams, Navigate } from 'react-router-dom'
+import { NavLink, Routes, Route, useNavigate, useParams, useLocation, Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   LayoutDashboard,
@@ -26,6 +26,7 @@ import { Calendar, Indicators } from './Reports'
 import Settings from './Settings'
 import PartialReleaseApprovals from './PartialReleaseApprovals'
 import Brand from './Brand'
+import PrintDocument from './PrintDocument'
 
 const BindingScanner = lazy(() => import('./BindingScanner'))
 
@@ -113,6 +114,7 @@ function Guard({ user, permission, children }) {
 export default function App() {
   const qc = useQueryClient(),
     nav = useNavigate(),
+    currentLocation = useLocation(),
     [search, setSearch] = useState(''),
     [logoutError, setLogoutError] = useState(null)
   const me = useQuery({ queryKey: ['me'], queryFn: () => api('/auth/me'), retry: false })
@@ -145,6 +147,8 @@ export default function App() {
     ...(can(user, 'reports') ? [['/indicators', 'Indicadores', ChartNoAxesCombined]] : []),
     ['/settings', 'Configuración', SettingsIcon],
   ]
+  const detailContext = /^\/cases\/\d+/.test(currentLocation.pathname) ? new URLSearchParams(currentLocation.search).get('from') : null
+  const activePath = links.some(([path]) => path === detailContext) ? detailContext : (detailContext ? null : /^\/cases\/\d+/.test(currentLocation.pathname) ? '/inbox/mine' : null)
   async function logout() {
     try {
       await api('/auth/logout', { method: 'POST' })
@@ -157,6 +161,7 @@ export default function App() {
   if (user.roles.length === 1 && user.roles[0] === 'Escáner de encuadernación') {
     return <Suspense fallback={<Loading />}><BindingScanner user={user} onLogout={logout} /></Suspense>
   }
+  if (/^\/cases\/\d+\/print$/.test(window.location.pathname)) return <PrintDocument />
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -164,7 +169,7 @@ export default function App() {
         <p className="nav-label">OPERACIONES</p>
         <nav aria-label="Navegación principal">
           {links.map(([path, label, Icon]) => (
-            <NavLink key={path} to={path} end={path === '/' || path === '/clients'}>
+            <NavLink key={path} to={path} end={path === '/' || path === '/clients'} className={({isActive}) => activePath ? path === activePath ? 'active' : '' : isActive ? 'active' : ''} aria-current={activePath === path ? 'page' : undefined}>
               <Icon size={18} />
               {label}
             </NavLink>

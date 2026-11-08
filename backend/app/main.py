@@ -15,6 +15,7 @@ from .config import settings
 from .db import engine, SessionLocal
 from .routers import auth, clients, cases, production, reports, scanner, history
 from .services import reopen_overdue_attention
+from .deletion import retry_file_cleanup
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ async def attention_recovery_loop():
         try:
             with SessionLocal.begin() as db:
                 reopen_overdue_attention(db)
+            await to_thread.run_sync(retry_file_cleanup)
         except Exception:
             # A database outage is retried on the next cycle; it never blocks startup.
             logger.exception('Falló la recuperación de seguimientos vencidos')

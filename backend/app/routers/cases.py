@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 import hashlib
 import json
 from sqlalchemy import func, select
@@ -8,8 +8,33 @@ from .. import schemas as s, services as service
 from ..security import current_user, require
 from ..repository import row, get_case, case_detail, cases_list, case_counts, orders_list, attention_predicates, normalize
 from .common import case_response
+from ..deletion import require_admin, preview_cases, delete_case, retry_file_cleanup
+from pydantic import BaseModel
+
+
+class DeleteConfirmation(BaseModel):
+    preview: dict
+    confirmation: str
 
 router = APIRouter(prefix='/api', tags=['Expedientes'])
+
+
+@router.get('/cases/{case_id}/delete-preview')
+def case_delete_preview(case_id: int, user=Depends(current_user), db=Depends(get_db, scope='function')):
+    require_admin(user)
+    case = db.get(Case, case_id)
+    if not case: raise HTTPException(404, 'La solicitud ya no existe')
+    return preview_cases(db, [case])
+
+
+@router.post('/cases/{case_id}/delete-definitively')
+def case_delete_confirm(case_id: int, data: DeleteConfirmation, background: BackgroundTasks, user=Depends(current_user), db=Depends(get_db, scope='function')):
+    require_admin(user)
+    if data.confirmation != f'CG-{case_id:06d}':
+        raise HTTPException(422, 'Escribe el número de solicitud para confirmar')
+    delete_case(db, user, case_id, data.preview)
+    background.add_task(retry_file_cleanup)
+    return {'deleted': True}
 
 
 @router.get('/cases')

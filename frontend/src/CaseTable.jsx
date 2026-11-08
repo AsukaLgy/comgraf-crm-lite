@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api, can, date, money, uid } from './api'
@@ -6,6 +6,9 @@ import { Badge, Empty, ErrorBox } from './components'
 
 // Shared read-only row projection for operational pools and customer history.
 export default function CaseTable({ items, remember, user }) {
+  const location = useLocation()
+  const from = location.pathname
+  const context = `from=${encodeURIComponent(from)}&return=${encodeURIComponent(location.pathname + location.search)}`
   if (!items.length) return <Empty />
 
   return (
@@ -32,7 +35,7 @@ export default function CaseTable({ items, remember, user }) {
           {items.map((record) => (
             <tr key={record.id}>
               <td>
-                <Link onClick={remember} to={`/cases/${record.id}`}>
+                <Link onClick={remember} to={`/cases/${record.id}?${context}`}>
                   <small className="case-number">{record.number}</small>
                   <strong>{record.subject}</strong>
                 </Link>
@@ -51,7 +54,7 @@ export default function CaseTable({ items, remember, user }) {
               </td>
               <td>
                 {record.productions?.length ? record.productions.map((order) => <div className="order-table-row" key={order.id}>
-                  <Link to={`/cases/${record.id}?production_id=${order.id}`} onClick={remember}>{order.order_number}</Link>
+                  <Link to={`/cases/${record.id}?production_id=${order.id}&${context}`} onClick={remember}>{order.order_number}</Link>
                   <Badge tone={order.cancelled_at?'red':order.blocked_since?'amber':order.delivery_status==='Completa'?'teal':order.stage==='READY'?'amber':''}>{order.cancelled_at?'Anulada':order.blocked_since?'Bloqueada':order.delivery_status==='Completa'?'Entregada':order.stage_label}</Badge>
                   <small>Entrega {order.delivery_status.toLowerCase()}</small>
                 </div>) : (
@@ -59,7 +62,7 @@ export default function CaseTable({ items, remember, user }) {
                 )}
               </td>
               <td>
-                {record.productions?.length ? record.productions.filter(o=>o.committed_date).map(o=><small className="order-date" key={o.id}><Link to={`/cases/${record.id}?production_id=${o.id}`} onClick={remember}>{o.order_number}</Link> · {date(o.committed_date)}</small>) : '—'}
+                {record.productions?.length ? record.productions.filter(o=>o.committed_date).map(o=><small className="order-date" key={o.id}><Link to={`/cases/${record.id}?production_id=${o.id}&${context}`} onClick={remember}>{o.order_number}</Link> · {date(o.committed_date)}</small>) : '—'}
                 <small>{record.next_action}</small>
               </td>
               <td>

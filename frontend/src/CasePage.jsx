@@ -12,6 +12,7 @@ import OrderQRCode from './OrderQRCode'
 import DeliveryFinance from './DeliveryFinance'
 import ProductionStages from './ProductionStages'
 import { HNL_CURRENCY } from './domain'
+import DeleteDialog from './DeleteDialog'
 const reason = { name: 'reason', label: 'Motivo', type: 'textarea', required: true }
 const sectionParam = {
   Actividad: 'activity',
@@ -195,10 +196,11 @@ export default function CasePage({ user, print = false }) {
   if (print) return <CasePrintSheet id={id} record={c} person={person} />
   return (
     <>
-      <button className="back-link" onClick={() => nav(-1)}>
+      <button className="back-link" onClick={() => { const target = searchParams.get('return'); if (target && /^\/(inbox\/(pool|mine|production|ready|finalized|history)|calendar|search)([?][^#]*)?$/.test(target)) nav(target); else nav(-1) }}>
         <ArrowLeft size={16} />
         Volver a la bandeja
       </button>
+      {user.roles.includes('Administrador') && <details className="secondary-actions"><summary>Más acciones</summary><button type="button" className="danger" onClick={() => setModal({type:'delete'})}>Eliminar definitivamente</button></details>}
       <CaseAttention
         record={c}
         person={person}
@@ -370,7 +372,7 @@ export default function CasePage({ user, print = false }) {
                           Generar orden con esta versión
                         </button>
                       )}
-                      {q.production_id && <Link className="button" to={`/cases/${c.id}?production_id=${q.production_id}&tab=production`}>Ver {q.order_number}</Link>}
+                      {q.production_id && <Link className="button" to={`/cases/${c.id}?production_id=${q.production_id}&tab=production&from=${encodeURIComponent(searchParams.get('from') || '/inbox/mine')}&return=${encodeURIComponent(searchParams.get('return') || '/inbox/mine')}`}>Ver {q.order_number}</Link>}
                     </div>
                   </article>
                 ))
@@ -525,7 +527,7 @@ export default function CasePage({ user, print = false }) {
             <div className="order-preview-panel">
               <Panel
                 title={`Vista previa · ${p.order_number}`}
-                action={<button type="button" className="primary" onClick={() => window.print()}><Printer size={16} />Imprimir orden de producción</button>}
+                action={<a className="button primary" target="_blank" rel="noopener noreferrer" href={`/cases/${id}/print?production_id=${p.id}`}><Printer size={16} />Imprimir orden de producción</a>}
               >
                 <CasePrintSheet id={id} record={c} person={person} preview />
               </Panel>
@@ -806,7 +808,7 @@ export default function CasePage({ user, print = false }) {
           quote={modal.type === 'quote'}
           source={modal.source}
           onClose={close}
-          onCreated={(order) => {setSearchParams({ production_id: String(order.id), tab: 'production' })}}
+          onCreated={(order) => {const params = new URLSearchParams(searchParams); params.set('production_id', String(order.id)); params.set('tab', 'production'); setSearchParams(params)}}
         />
       )}
       {modal?.type === 'upload' && (
@@ -840,6 +842,7 @@ export default function CasePage({ user, print = false }) {
           )}
         />
       )}
+      {modal?.type === 'delete' && <DeleteDialog kind="case" id={id} onClose={close} onDeleted={() => nav('/inbox/mine')}/>}
     </>
   )
 }

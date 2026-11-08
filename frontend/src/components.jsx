@@ -44,14 +44,16 @@ export function Empty({ children = 'No hay registros en esta vista.' }) {
   )
 }
 export function Field({ label, children, ...props }) {
+  const required = Boolean((props.required || children?.props?.required) && (children?.props?.type || props.type) !== 'checkbox')
   return (
     <label className={'field ' + (props.className || '')}>
-      <span>{label}</span>
+      <span>{label}{required && <span className="required-mark" aria-hidden="true"> *</span>}</span>
       {children ? (
-        cloneElement(children, { 'aria-label': label })
+        cloneElement(children, { 'aria-label': label, required, 'aria-required': required || undefined })
       ) : (
-        <input aria-label={label} {...props} />
+        <input aria-label={label} {...props} required={required} aria-required={required || undefined} />
       )}
+      {required && <small className="required-help">* Campo obligatorio</small>}
     </label>
   )
 }
