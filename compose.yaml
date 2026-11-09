@@ -17,10 +17,15 @@ services:
       retries: 30
     networks: [internal]
   app:
-    build: .
+    build:
+      context: .
+      args:
+        BUILD_COMMIT: ${BUILD_COMMIT:-unknown}
+        BUILD_DATE: ${BUILD_DATE:-unknown}
     restart: unless-stopped
     env_file: .env
     environment:
+      PRODUCT_VERSION: 1.5.0
       DB_HOST: db
       DB_PORT: 3306
       UPLOAD_DIR: /data/uploads

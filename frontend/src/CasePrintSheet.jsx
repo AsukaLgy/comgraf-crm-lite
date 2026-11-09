@@ -109,7 +109,7 @@ export default function CasePrintSheet({ id, record, person, preview = false }) 
           return (
             <section className="cai-item" key={item.id || index}>
               <h3>
-                {production.order_number} · Partida {index + 1} · {item.product}
+                {production.order_number} · Producto {index + 1} · {item.product}
               </h3>
               <dl>
                 <div>

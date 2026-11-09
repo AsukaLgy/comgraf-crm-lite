@@ -148,7 +148,7 @@ export default function DeliveryFinance({ record, user, finance, onOperation, on
             <thead>
               <tr>
                 <th>Fecha</th>
-                <th>Partida</th>
+                <th>Producto</th>
                 <th>Cantidad</th>
                 <th>Recibe</th>
                 <th>Modalidad</th>
@@ -161,11 +161,11 @@ export default function DeliveryFinance({ record, user, finance, onOperation, on
                   <td>{date(delivery.delivered_at)}</td>
                   <td>
                     {record.items.find((item) => item.id === delivery.item_id)?.product ||
-                      'Partida'}
+                      'Producto'}
                   </td>
                   <td>{quantity(delivery.quantity)}</td>
                   <td>{delivery.receiver}</td>
-                  <td>{delivery.method}</td>
+                  <td>{delivery.method === 'Entrega (delivery)' ? 'Entrega a domicilio' : delivery.method}</td>
                   <td>{delivery.evidence}</td>
                 </tr>
               ))}

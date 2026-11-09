@@ -1,11 +1,11 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { api, can, date, money, uid } from './api'
+import { api, can, date, dateHonduras, uid } from './api'
 import { Badge, Empty, ErrorBox } from './components'
 
 // Shared read-only row projection for operational pools and customer history.
-export default function CaseTable({ items, remember, user }) {
+export default function CaseTable({ items, remember, user, showCreated = false, onDelete }) {
   const location = useLocation()
   const from = location.pathname
   const context = `from=${encodeURIComponent(from)}&return=${encodeURIComponent(location.pathname + location.search)}`
@@ -22,13 +22,14 @@ export default function CaseTable({ items, remember, user }) {
         <thead>
           <tr>
             <th>Solicitud / asunto</th>
+            {showCreated && <th>Fecha de creación</th>}
             <th>Cliente</th>
             <th>Responsable</th>
             <th>Atención</th>
             <th>Producción / entrega</th>
             <th>Compromiso</th>
             <th>Prioridad</th>
-            <th>Saldo</th>
+            {onDelete && <th>Opciones</th>}
           </tr>
         </thead>
         <tbody>
@@ -47,6 +48,7 @@ export default function CaseTable({ items, remember, user }) {
                 {record.requires_action && <span className="action-dot" title="Requiere acción" />}
                 {!record.owner_id && can(user, 'attention') && <TakeCaseButton record={record} />}
               </td>
+              {showCreated && <td><time dateTime={record.created_at}>{dateHonduras(record.created_at)}</time></td>}
               <td>{record.client.name}</td>
               <td>{record.owner_name || <span className="muted">Sin asignar</span>}</td>
               <td>
@@ -68,22 +70,7 @@ export default function CaseTable({ items, remember, user }) {
               <td>
                 <Badge tone={priorityTone(record.priority)}>{record.priority}</Badge>
               </td>
-              <td>
-                {record.balance === undefined
-                  ? '—'
-                  : record.balance === null ? 'Saldo por moneda' : money(record.balance, record.production?.currency)}
-                {record.production?.cancellation_review_pending && (
-                  <small className="text-red">Resolución de anulación pendiente</small>
-                )}
-                {record.production?.stage === 'READY' && record.pickup_payment_status && (
-                  <small>
-                    {record.pickup_payment_status} · recibido{' '}
-                    {money(record.received_amount, record.production.currency)}
-                  </small>
-                )}
-                {record.balance < 0 && <small>Pendiente de devolución</small>}
-                {record.payment_status === 'Vencido' && <small className="text-red">Vencido</small>}
-              </td>
+              {onDelete && <td><button type="button" className="text-button danger" onClick={() => onDelete(record)}>Eliminar solicitud</button></td>}
             </tr>
           ))}
         </tbody>

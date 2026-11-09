@@ -176,7 +176,7 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <span className="online-dot" /> Entorno local <small>Comunicación Gráfica</small>
+          <span className="online-dot" /> Entorno local <small>Comunicación Gráfica</small><small className="sidebar-version">v{PRODUCT_VERSION}</small>
         </div>
       </aside>
       <div className="workspace-main">
@@ -222,7 +222,7 @@ export default function App() {
           <ErrorBox error={{ code: 'CLIENT_CONTRACT_MISMATCH', message: 'El contrato HTTP de interfaz y servidor no coincide.' }} />
         )}
         <p className="muted version-stamp" aria-label="Versiones del sistema">
-          Web {PRODUCT_VERSION} · API {API_CONTRACT_VERSION} · servidor {serverVersion.data?.build || 'sin identificar'}
+          Web {PRODUCT_VERSION} · API {API_CONTRACT_VERSION} · servidor {serverVersion.data?.product_version || 'sin identificar'}
         </p>
         <main className="main-content">
           <Routes>

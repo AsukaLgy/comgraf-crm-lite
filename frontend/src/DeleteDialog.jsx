@@ -16,8 +16,7 @@ export default function DeleteDialog({ kind, id, onClose, onDeleted }) {
   const base = kind === 'client' ? `/clients/${id}` : `/cases/${id}`
   const preview = useQuery({ queryKey: ['delete-preview', kind, id], queryFn: () => api(base + '/delete-preview'), staleTime: 0 })
   const data = preview.data
-  const expected = data?.cases?.[0]?.number
-  const confirmed = kind === 'client' ? validClientWord(confirmation) : confirmation === expected
+  const confirmed = validClientWord(confirmation)
   const scopeConfirmed = kind !== 'client' || !data?.cases?.length || includeCases
 
   useEffect(() => {
@@ -56,7 +55,7 @@ export default function DeleteDialog({ kind, id, onClose, onDeleted }) {
     }
   }
 
-  return <Modal title={kind === 'client' ? 'Eliminar cliente' : 'Eliminar definitivamente'} onClose={close} busy={busy} wide>
+  return <Modal title={kind === 'client' ? 'Eliminar cliente' : 'Eliminar solicitud'} onClose={close} busy={busy} wide>
     {preview.isPending ? <Loading/> : preview.error ? <div className="dialog-body"><ErrorBox error={preview.error}/><button type="button" onClick={() => preview.refetch()}>Reintentar</button></div> : <form onSubmit={submit}>
       <div className="dialog-body delete-dialog-body">
         {kind === 'client' ? <div className="delete-identity"><strong>{data.client.name}</strong>{data.client.rtn && <span>RTN {data.client.rtn}</span>}</div> : <p><strong>{data.cases[0].number} · {data.cases[0].subject}</strong></p>}
@@ -70,7 +69,7 @@ export default function DeleteDialog({ kind, id, onClose, onDeleted }) {
           {kind === 'client' && data.cases.length > 0 && <label className="delete-scope-check"><input type="checkbox" checked={includeCases} onChange={e => setIncludeCases(e.target.checked)}/> Eliminar cliente y sus solicitudes</label>}
         </div>
         {kind === 'client' && <p className="delete-warning">Esta acción es definitiva y no se puede deshacer desde la aplicación.</p>}
-        <Field label={kind === 'client' ? 'Para confirmar la eliminación definitiva, escribe comgraf' : `Escribe ${expected} para confirmar`} required value={confirmation} onChange={e => setConfirmation(e.target.value)} ref={confirmationInput} />
+        <Field label="Para confirmar la eliminación definitiva, escribe comgraf" required value={confirmation} onChange={e => setConfirmation(e.target.value)} ref={confirmationInput} />
         <ErrorBox error={error}/>
       </div>
       <footer><button type="button" onClick={close} disabled={busy}>Cancelar</button><button className="destructive-button" disabled={busy || !confirmed || !scopeConfirmed}>{busy ? 'Eliminando…' : 'Eliminar definitivamente'}</button></footer>

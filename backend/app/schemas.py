@@ -256,6 +256,20 @@ class StageInput(Mutation):
     reason: str = Field(default='', max_length=3000)
 
 
+class AdminStageInput(Mutation):
+    production_id: int = Field(ge=1)
+    stage: Literal['APPROVAL', 'PRINTING', 'WORKSHOP', 'READY']
+
+
+class TitleInput(Input):
+    version: int = Field(ge=1)
+    title: str = Field(min_length=1, max_length=240)
+
+
+class ScannerTitleInput(BindingScanInput, TitleInput):
+    pass
+
+
 class WorkFinishedInput(Input):
     production_id: int = Field(ge=1)
 

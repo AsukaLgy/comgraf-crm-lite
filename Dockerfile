@@ -6,6 +6,9 @@ COPY frontend/ ./
 RUN npm run build
 
 FROM python:3.14-slim-bookworm@sha256:48b13b003dda20b16f9442b8475aa05fe21bf6579a8c881db92ffb4d8fd20f83
+ARG BUILD_COMMIT=unknown
+ARG BUILD_DATE=unknown
+ENV COMGRAF_BUILD_COMMIT=${BUILD_COMMIT} COMGRAF_BUILD_DATE=${BUILD_DATE} PRODUCT_VERSION=1.5.0
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 # Python wheels built from source must remain at x86-64-v1 even if the image is built on a newer CPU.
 ENV CFLAGS="-march=x86-64 -mtune=generic" RUSTFLAGS="-C target-cpu=x86-64"

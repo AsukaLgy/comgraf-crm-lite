@@ -10,12 +10,17 @@ def test_admin_deletes_one_case_and_other_roles_cannot(clients):
     url = f"/api/cases/{first['id']}"
     assert clients['agent'].get(url + '/delete-preview').status_code == 403
     preview = must(admin.get(url + '/delete-preview'))
-    payload = {'preview': preview, 'confirmation': first['number']}
+    payload = {'preview': preview, 'confirmation': 'comgraf'}
     assert clients['agent'].post(url + '/delete-definitively', json=payload).status_code == 403
-    must(admin.post(url + '/delete-definitively', json=payload))
+    for word in ('', 'com', 'comgraf extra', 'acomgraf'):
+        assert admin.post(url + '/delete-definitively', json={**payload, 'confirmation': word}).status_code == 422
+    must(admin.post(url + '/delete-definitively', json={**payload, 'confirmation': ' COMGRAF '}))
     assert admin.get(url).status_code == 404
     assert admin.get(f"/api/cases/{second['id']}").status_code == 200
-    assert admin.get(f"/api/clients/{customer['id']}").status_code == 200
+    profile = must(admin.get(f"/api/clients/{customer['id']}"))
+    assert [case['id'] for case in profile['cases']] == [second['id']]
+    listed = must(admin.get('/api/cases?view=pool'))['items']
+    assert first['id'] not in [case['id'] for case in listed]
     assert admin.post(url + '/delete-definitively', json=payload).status_code == 404
     with SessionLocal() as db:
         assert db.query(DeletionAudit).filter_by(record_type='case', record_id=first['id']).count() == 1

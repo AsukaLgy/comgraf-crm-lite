@@ -172,7 +172,7 @@ export default function CasePage({ user, print = false }) {
       'Registrar entrega',
       [
         ...(eligible.length > 1 ? [{ name: 'production_id', label: 'Orden que se entregará', options: eligible.map((order) => ({ value: order.id, label: `${order.order_number} · ${order.description || 'Trabajo'}` })), required: true }] : []),
-        { name: 'method', label: 'Modalidad', options: ['Retiro en local', 'Entrega (delivery)'], required: true },
+        { name: 'method', label: 'Modalidad', options: ['Retiro en local', { value: 'Entrega (delivery)', label: 'Entrega a domicilio' }], required: true },
         { name: 'receiver', label: 'Recibido por (opcional)' },
         {
           name: 'evidence',
@@ -203,6 +203,7 @@ export default function CasePage({ user, print = false }) {
       {user.roles.includes('Administrador') && <details className="secondary-actions"><summary>Más acciones</summary><button type="button" className="danger" onClick={() => setModal({type:'delete'})}>Eliminar definitivamente</button></details>}
       <CaseAttention
         record={c}
+        onEditTitle={async title => {await api(`/cases/${c.id}/title`,{method:'PATCH',body:{title,version:c.version}});await qc.invalidateQueries()}}
         person={person}
         canAttend={activeAttention}
         canTake={canTake}
@@ -252,6 +253,8 @@ export default function CasePage({ user, print = false }) {
       {p && (
         <ProductionStages
           record={c}
+          isAdmin={user.roles.includes('Administrador')}
+          onAdminStage={async stage=>{const result=await api(`/cases/${c.id}/production/admin-stage`,{method:'POST',body:{production_id:p.id,stage,version:c.version,key:uid()}});qc.setQueryData(['case',id,selectedProductionId],result);await qc.invalidateQueries();return result}}
           canManage={production && c.lifecycle !== 'Completado'}
           onSelectProduction={selectProduction}
           onConfirmFinished={openFinishConfirmation}
@@ -320,7 +323,7 @@ export default function CasePage({ user, print = false }) {
                       <strong>{money(q.total, q.currency)}</strong>
                     </div>
                     <p className="muted">
-                      Vigencia: {date(q.valid_until)} · {q.items.length} partidas
+                      Vigencia: {date(q.valid_until)} · {q.items.length} productos
                     </p>
                     {q.items.map((i, n) => (
                       <details key={n}>

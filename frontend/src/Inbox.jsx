@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, SlidersHorizontal, Bookmark } from 'lucide-react'
 import { api, can } from './api'
 import { Badge, ErrorBox, Loading, Field, Select, FormDialog } from './components'
-import { PRODUCTION_STAGES, CASE_STATUSES, CASE_PRIORITIES } from './domain'
+import { PRODUCTION_STAGES, PRODUCTION_STAGE_LABELS, CASE_STATUSES, CASE_PRIORITIES } from './domain'
 import CaseTable from './CaseTable'
 import OrderTable from './OrderTable'
 import NewCase from './NewCase'
@@ -296,7 +296,7 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
           <div className="filters advanced">
             <Select
               label="Etapa de producción"
-              options={PRODUCTION_STAGES}
+              options={PRODUCTION_STAGES.map(value=>({value,label:PRODUCTION_STAGE_LABELS[value]}))}
               empty="Todas"
               value={filters.stage || ''}
               onChange={(e) => set('stage', e.target.value)}
@@ -366,7 +366,7 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
         {list.isPending ? (
           <Loading />
         ) : (
-          list.data && (orderView ? <OrderTable items={list.data.items}/> : <CaseTable items={list.data.items} remember={remember} user={user} />)
+          list.data && (orderView ? <OrderTable items={list.data.items} showBalance={['ready','balances','overdue','refunds','cancellation-review'].includes(view) && can(user,'finance')}/> : <CaseTable items={list.data.items} remember={remember} user={user} showCreated={view==='pool'} />)
         )}
         <div className="list-footer">
           <span>

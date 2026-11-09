@@ -369,7 +369,7 @@ def convert(db, user, case_id, data, *, permission='attention'):
         )
         if needs_binding:
             if len(data.items) != len(quoted_items):
-                fail('Selecciona el tipo de encuadernación para cada partida CAI antes de generar la orden')
+                fail('Selecciona el tipo de encuadernación para cada producto CAI antes de generar la orden')
 
             def clean(value):
                 if isinstance(value, dict):
@@ -400,7 +400,7 @@ def convert(db, user, case_id, data, *, permission='attention'):
                         if source_binding != chosen_binding:
                             fail('La encuadernación cotizada no puede cambiar al generar la orden')
                     elif chosen_binding not in CAI_BINDINGS:
-                        fail('Selecciona un tipo de encuadernación válido para cada partida CAI')
+                        fail('Selecciona un tipo de encuadernación válido para cada producto CAI')
                     else:
                         resolved_items[index]['specs'] = {
                             **(resolved_items[index].get('specs') or {}),
@@ -532,7 +532,7 @@ def _scanner_order_summary(db, case, production):
     client = db.get(Client, case.client_id)
     items = db.scalars(select(Item).where(Item.production_id == production.id).order_by(Item.id)).all()
     return {'id': production.id, 'order_number': f'OP-{production.id:05d}',
-        'case_number': f'CG-{case.id:06d}', 'subject': case.subject, 'client': client.name if client else '',
+        'case_number': f'CG-{case.id:06d}', 'case_version': case.version, 'subject': case.subject, 'client': client.name if client else '',
         'stage': production.stage, 'stage_label': s.STAGE_LABELS.get(production.stage, 'Pendiente de clasificación'),
         'blocked': bool(production.blocked_since), 'cancelled': bool(production.cancelled_at),
         'delivery_complete': delivery_status(db, case.id, production.id) == 'Completa',
@@ -796,6 +796,51 @@ def change_stage(db, user, case_id, data):
     return case
 
 
+def change_stage_admin(db, user, case_id, data):
+    if 'Administrador' not in (user.roles or []):
+        fail('Solo un Administrador puede cambiar directamente la etapa', 403)
+    case, changed = mutation(db, user, case_id, data, 'admin_stage', 'production')
+    if not changed: return case
+    production = get_production(db, case, data.production_id)
+    if production.blocked_since:
+        fail('La OP está bloqueada; resuelve el bloqueo antes de cambiar la etapa.', 409)
+    old = production.stage
+    if old == data.stage:
+        fail('La etapa ya está activa', 409)
+    if delivery_status(db, case.id, production.id) != 'Pendiente' and data.stage != old:
+        fail('La OP tiene entregas registradas; resuelve su situación de entrega antes de cambiar la etapa.', 409)
+    if old == 'READY' and data.stage != 'READY':
+        production.workflow_cycle += 1
+        production.binding_confirmed_cycle = None
+        production.binding_confirmed_at = None
+        production.binding_confirmed_by_id = None
+    production.stage = data.stage
+    production.classification_required = False
+    production.stage_started_at = now()
+    event(db, case, user, f'OP-{production.id:05d}: {s.STAGE_LABELS.get(old, "Sin clasificar")} → {s.STAGE_LABELS[data.stage]} por cambio manual administrativo.', data={
+        'action': 'stage', 'production_id': production.id, 'order_number': f'OP-{production.id:05d}',
+        'from': old, 'to': data.stage, 'origin': 'admin_manual', 'changed_at': now().isoformat() + 'Z'})
+    return case
+
+
+def change_title(db, user, case, data):
+    title = data.title.strip()
+    if not title:
+        fail('Escribe un título para la solicitud')
+    if len(title) > 240:
+        fail('El título no puede superar 240 caracteres')
+    if case.version != data.version:
+        fail('La solicitud cambió. Actualiza el detalle antes de guardar el título.', 409)
+    old = case.subject
+    if old == title:
+        return case
+    case.subject = title
+    case.version += 1
+    event(db, case, user, f'Título de solicitud actualizado: «{old}» → «{title}».', data={
+        'action': 'title_changed', 'from': old, 'to': title, 'origin': 'manual', 'changed_at': now().isoformat() + 'Z'})
+    return case
+
+
 def block(db, user, case_id, data, unblock=False):
     case, changed = mutation(db, user, case_id, data, 'unblock' if unblock else 'block', 'production')
     if not changed: return case
@@ -937,9 +982,9 @@ def deliver(db, user, case_id, data):
     if production.stage != 'READY' or production.classification_required or production.blocked_since: fail('El trabajo debe estar clasificado, listo y sin bloqueos')
     if data.delivered_at > now(): fail('La entrega no puede estar en el futuro')
     item = db.get(Item, data.item_id)
-    if not item or item.case_id != case.id or item.production_id != production.id: fail('Partida no pertenece a esta orden', 404)
+    if not item or item.case_id != case.id or item.production_id != production.id: fail('Producto no pertenece a esta orden', 404)
     delivered = db.scalar(select(func.coalesce(func.sum(Delivery.quantity), 0)).where(Delivery.item_id == item.id))
-    if delivered + data.quantity > item.quantity: fail('La cantidad supera lo pendiente de esta partida')
+    if delivered + data.quantity > item.quantity: fail('La cantidad supera lo pendiente de este producto')
     db.add(Delivery(case_id=case.id, item_id=item.id, quantity=data.quantity, delivered_at=data.delivered_at, receiver=data.receiver, method=data.method, evidence=data.evidence, actor_id=user.id))
     db.flush()
     payment_amount = getattr(data, 'payment_amount', None)
@@ -975,7 +1020,7 @@ def deliver_complete(db, user, case_id, data):
     if delivery_status(db, case.id, production.id) == 'Completa':
         fail('Esta orden ya tiene una entrega completa registrada', 409)
     items = db.scalars(select(Item).where(Item.production_id == production.id).order_by(Item.id).with_for_update()).all()
-    if not items: fail('La orden no tiene partidas entregables', 409)
+    if not items: fail('La orden no tiene productos entregables', 409)
     delivered_at = now()
     for item in items:
         delivered = db.scalar(select(func.coalesce(func.sum(Delivery.quantity), 0)).where(Delivery.item_id == item.id))

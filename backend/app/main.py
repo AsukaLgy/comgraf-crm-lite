@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, OperationalError
 from anyio import to_thread
 from .config import settings
+from .version import PRODUCT_VERSION, CONTRACT_VERSION
 from .db import engine, SessionLocal
 from .routers import auth, clients, cases, production, reports, scanner, history
 from .services import reopen_overdue_attention
@@ -70,7 +71,7 @@ async def guard(request: Request, call_next):
         if request.headers.get('X-Comgraf-Request') != '1':
             return JSONResponse({'detail': 'Solicitud de origen no autorizado'}, 403)
         contract = request.headers.get('X-Comgraf-Contract')
-        if contract != '5':
+        if contract != CONTRACT_VERSION:
             return JSONResponse({'detail': 'Contrato HTTP incompatible. Actualiza la interfaz y reinicia Comgraf.', 'code': 'CLIENT_CONTRACT_MISMATCH'}, 409)
         origin = request.headers.get('origin')
         if origin and urlparse(origin).netloc != request.headers.get('host'):
@@ -121,7 +122,9 @@ def health():
 
 @app.get('/api/version')
 def version():
-    return {'product': 'Comgraf', 'product_version': settings.product_version, 'build': settings.build_id, 'contract_version': '5'}
+    return {'product': 'Comgraf', 'product_version': PRODUCT_VERSION, 'build': settings.build_id,
+            'commit': settings.comgraf_build_commit, 'build_date': settings.comgraf_build_date,
+            'contract_version': CONTRACT_VERSION}
 
 
 static = Path(settings.static_dir)

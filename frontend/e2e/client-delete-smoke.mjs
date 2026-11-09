@@ -8,6 +8,7 @@ const browser = await chromium.launch({headless: true})
 const caseRow = {id:3,number:'CG-000003',subject:'Pedido ficticio',version:1,client:{name:'Cliente de prueba'},quotes:[],production:null,productions:[],deliveries:[],status:'Abierto',priority:'Normal'}
 const profile = {id:1,name:'Cliente de prueba',company:'Imprenta ficticia',rtn:'00123456789012',phones:[],emails:[],addresses:[],contacts:[{id:8,name:'Contacto de prueba',position:'',phone:'',email:''}],cases:[caseRow],provisional:false,observations:''}
 const preview = {client:{id:1,name:profile.name,rtn:profile.rtn,version:1},contacts:1,cases:[{id:3,number:caseRow.number,subject:caseRow.subject,version:1}],counts:{productions:1,items:2,quotes:1,tasks:1,attachments:1,events:2,deliveries:1,ledger:1}}
+const casePreview = {cases:[{id:3,number:caseRow.number,subject:caseRow.subject,version:1}],counts:{productions:1,items:2,quotes:1,tasks:1,attachments:1,events:2,deliveries:1,ledger:1}}
 
 for (const [name, viewport] of [['desktop',{width:1366,height:768}],['mobile',{width:390,height:844}]]) {
   const page = await browser.newPage({viewport,hasTouch:name==='mobile',isMobile:name==='mobile'})
@@ -21,6 +22,7 @@ for (const [name, viewport] of [['desktop',{width:1366,height:768}],['mobile',{w
     else if (path === '/api/version') body = {contract_version:'5',build:'test'}
     else if (path === '/api/clients/1') body = profile
     else if (path === '/api/clients/1/delete-preview') body = expanded ? {...preview,contacts:2} : preview
+    else if (path === '/api/cases/3/delete-preview') body = casePreview
     else if (path === '/api/clients/1/delete-definitively') {
       requests++
       await new Promise(resolve => setTimeout(resolve, 150))
@@ -31,6 +33,11 @@ for (const [name, viewport] of [['desktop',{width:1366,height:768}],['mobile',{w
     route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(body)})
   })
   await page.goto('http://127.0.0.1:4173/clients/1')
+  await page.getByRole('button',{name:'Eliminar solicitud'}).click()
+  const caseDialog = page.getByRole('dialog',{name:'Eliminar solicitud'})
+  await caseDialog.getByText('1 órdenes', {exact:false}).waitFor()
+  await page.screenshot({path:`${out}/solicitud-desde-cliente-${name}.png`,fullPage:true})
+  await caseDialog.getByRole('button',{name:'Cancelar'}).click()
   const more = page.getByRole('button',{name:'Más opciones'})
   await more.waitFor()
   if (name === 'mobile') await more.tap(); else await more.click()

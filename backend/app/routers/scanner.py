@@ -16,6 +16,13 @@ def scan(data: s.BindingScanInput, user=Depends(current_user), db=Depends(get_db
     return service.scan_binding(db, user, data.scan_id)
 
 
+@router.post('/title')
+def edit_scanned_title(data: s.ScannerTitleInput, user=Depends(current_user), db=Depends(get_db, scope='function')):
+    case, _orders, production = service._scanner_context(db, user, data.scan_id, lock=True)
+    service.change_title(db, user, case, data)
+    return {'case_id': case.id, 'production_id': production.id, 'title': case.subject, 'version': case.version}
+
+
 @router.post('/exceptions', status_code=201)
 def request_exception(data: s.PartialReleaseRequestInput, user=Depends(current_user), db=Depends(get_db, scope='function')):
     return service.request_partial_release(db, user, data)

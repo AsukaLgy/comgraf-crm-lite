@@ -33,6 +33,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        BUILD_COMMIT: ${BUILD_COMMIT:-unknown}
+        BUILD_DATE: ${BUILD_DATE:-unknown}
     image: comgraf-app:lan-low-resource
     restart: unless-stopped
     user: "${APP_UID:?}:${APP_GID:?}"
@@ -57,7 +60,7 @@ services:
       UPLOAD_DIR: /data/uploads
       STATIC_DIR: /app/frontend/dist
       ACCESS_LOG: 'false'
-      BUILD_ID: lan-light-experiment
+      BUILD_ID: ${BUILD_ID:-lan-light-experiment}
       TEST_MYSQL_DATABASE: ${MYSQL_DATABASE:?}
       TEST_UPLOAD_DIR: /data/test-uploads
     volumes:

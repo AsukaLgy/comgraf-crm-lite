@@ -19,6 +19,11 @@ def stage(case_id: int, data: s.StageInput, user=Depends(current_user), db=Depen
     return case_response(db, user, service.change_stage(db, user, case_id, data), data.production_id)
 
 
+@router.post('/cases/{case_id}/production/admin-stage')
+def admin_stage(case_id: int, data: s.AdminStageInput, user=Depends(current_user), db=Depends(get_db, scope='function')):
+    return case_response(db, user, service.change_stage_admin(db, user, case_id, data), data.production_id)
+
+
 @router.post('/cases/{case_id}/production/confirm-finished')
 def confirm_finished(case_id: int, data: s.WorkFinishedInput, user=Depends(current_user), db=Depends(get_db, scope='function')):
     return service.confirm_finished_manually(db, user, case_id, data.production_id)
@@ -57,7 +62,7 @@ def refund(case_id: int, data: s.RefundInput, user=Depends(current_user), db=Dep
 @router.post('/cases/{case_id}/deliveries')
 def deliver(case_id: int, data: s.DeliveryWithPaymentInput, user=Depends(current_user), db=Depends(get_db, scope='function')):
     require(db, user, 'production')
-    raise HTTPException(410, 'El registro por partida y cantidad ya no está disponible. Usa la entrega completa de una OP.')
+    raise HTTPException(410, 'El registro por producto y cantidad ya no está disponible. Usa la entrega completa de una OP.')
 
 
 @router.post('/cases/{case_id}/deliveries/complete')

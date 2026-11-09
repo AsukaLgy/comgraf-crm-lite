@@ -1,10 +1,12 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Printer, UserRound } from 'lucide-react'
+import { Plus, Printer, UserRound, Pencil } from 'lucide-react'
 import { date } from './api'
 import { Badge, ErrorBox } from './components'
 
 export default function CaseAttention({
   record,
+  onEditTitle,
   person,
   canAttend,
   canTake,
@@ -32,7 +34,7 @@ export default function CaseAttention({
             <Badge tone={record.production_count ? 'teal' : ''}>{record.production_count ? `${record.production_count} órdenes` : record.mode}</Badge>
             {record.lifecycle === 'Completado' && <Badge tone="teal">Completado</Badge>}
           </div>
-          <h1>{record.subject}</h1>
+          <EditableTitle record={record} onSave={onEditTitle}/>
           <div className="case-meta">
             <span>{record.client.name}</span>
             <span>· Responsable: {person(record.owner_id)}</span>
@@ -134,4 +136,18 @@ export default function CaseAttention({
       <ErrorBox error={attentionError} />
     </>
   )
+}
+
+function EditableTitle({record,onSave}) {
+  const [editing,setEditing]=useState(false),[value,setValue]=useState(record.subject),[busy,setBusy]=useState(false),[error,setError]=useState('')
+  function cancel(){setValue(record.subject);setError('');setEditing(false)}
+  async function save(){
+    const title=value.trim()
+    if(!title){setError('Escribe un título.');return}
+    if(title.length>240){setError('El título no puede superar 240 caracteres.');return}
+    if(busy)return
+    setBusy(true);setError('')
+    try{await onSave(title);setEditing(false)}catch(failure){setError(failure.message)}finally{setBusy(false)}
+  }
+  return editing?<div className="case-title-edit"><input aria-label="Título de la solicitud" autoFocus maxLength={240} value={value} onChange={e=>setValue(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();void save()}if(e.key==='Escape')cancel()}}/><button type="button" disabled={busy} onClick={()=>void save()}>{busy?'Guardando…':'Guardar'}</button><button type="button" disabled={busy} onClick={cancel}>Cancelar</button>{error&&<small role="alert">{error}</small>}</div>:<div className="case-title-line"><h1>{record.subject}</h1><button type="button" className="text-button" onClick={()=>{setValue(record.subject);setEditing(true)}}><Pencil size={14}/>Editar título</button></div>
 }

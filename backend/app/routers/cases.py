@@ -30,8 +30,8 @@ def case_delete_preview(case_id: int, user=Depends(current_user), db=Depends(get
 @router.post('/cases/{case_id}/delete-definitively')
 def case_delete_confirm(case_id: int, data: DeleteConfirmation, background: BackgroundTasks, user=Depends(current_user), db=Depends(get_db, scope='function')):
     require_admin(user)
-    if data.confirmation != f'CG-{case_id:06d}':
-        raise HTTPException(422, 'Escribe el número de solicitud para confirmar')
+    if data.confirmation.strip().casefold() != 'comgraf':
+        raise HTTPException(422, 'Para confirmar la eliminación definitiva, escribe comgraf')
     delete_case(db, user, case_id, data.preview)
     background.add_task(retry_file_cleanup)
     return {'deleted': True}
@@ -45,6 +45,13 @@ def list_cases(request: Request, user=Depends(current_user), db=Depends(get_db, 
 @router.get('/counts')
 def counts(user=Depends(current_user), db=Depends(get_db, scope='function')):
     return case_counts(db, user)
+
+
+@router.patch('/cases/{case_id}/title')
+def edit_title(case_id: int, data: s.TitleInput, user=Depends(current_user), db=Depends(get_db, scope='function')):
+    case = get_case(db, user, case_id, lock=True)
+    service.change_title(db, user, case, data)
+    return case_response(db, user, case)
 
 
 @router.get('/production-clients')

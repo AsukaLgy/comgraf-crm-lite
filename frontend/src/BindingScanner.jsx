@@ -13,6 +13,17 @@ export default function BindingScanner({ user, onLogout }) {
   const [camera, setCamera] = useState('idle'), [cameraError, setCameraError] = useState('')
   const [qr, setQr] = useState(''), [outcome, setOutcome] = useState(null), [busyState, setBusyState] = useState(false)
   const [comment, setComment] = useState(''), [exceptionMessage, setExceptionMessage] = useState(''), [exceptionBusy, setExceptionBusy] = useState(false)
+  const [editingTitle,setEditingTitle]=useState(false),[titleDraft,setTitleDraft]=useState(''),[titleBusy,setTitleBusy]=useState(false),[titleError,setTitleError]=useState('')
+
+  async function saveScannedTitle(){
+    if(titleBusy||!titleDraft.trim()||titleDraft.trim().length>240)return
+    setTitleBusy(true);setTitleError('')
+    try{
+      const result=await api('/scanner/title',{method:'POST',body:{scan_id:qr,version:outcome.order.case_version,title:titleDraft.trim()}})
+      setOutcome(current=>({...current,order:{...current.order,subject:result.title,case_version:result.version}}))
+      setEditingTitle(false)
+    }catch(error){setTitleError(error.message)}finally{setTitleBusy(false)}
+  }
 
   const stopCamera = useCallback(() => {
     cameraSession.current += 1
@@ -167,6 +178,7 @@ export default function BindingScanner({ user, onLogout }) {
             {order && <>
               <p><strong>{order.order_number}</strong> · Solicitud {order.case_number}</p>
               <p>{order.client} · {order.subject}</p>
+              {qr&&<div className="scanner-title-edit">{editingTitle?<><input aria-label="Título de la solicitud" maxLength={240} autoFocus value={titleDraft} onChange={e=>setTitleDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();void saveScannedTitle()}if(e.key==='Escape')setEditingTitle(false)}}/><button type="button" disabled={titleBusy||!titleDraft.trim()} onClick={()=>void saveScannedTitle()}>{titleBusy?'Guardando…':'Guardar título'}</button><button type="button" disabled={titleBusy} onClick={()=>setEditingTitle(false)}>Cancelar</button>{titleError&&<p role="alert">{titleError}</p>}</>:<button type="button" className="text-button" onClick={()=>{setTitleDraft(order.subject);setTitleError('');setEditingTitle(true)}}>Editar título de solicitud</button>}</div>}
               <p>Etapa: <strong>{order.stage_label}</strong></p>
               {order.confirmed_at && <p>Confirmada: {date(order.confirmed_at)}</p>}
               <ul className="scanner-products">{order.items.map((item, index) => <li key={index}>{item.product}: {item.quantity} {item.unit}</li>)}</ul>

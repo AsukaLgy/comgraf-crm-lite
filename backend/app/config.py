@@ -21,8 +21,9 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     upload_dir: str = '../uploads'
     static_dir: str = '../frontend/dist'
-    product_version: str = '1.4.0'
-    build_id: str = 'local-1.4.0'
+    build_id: str = 'local-1.5.0'
+    comgraf_build_commit: str = 'unknown'
+    comgraf_build_date: str = 'unknown'
 
     @property
     def database_url(self):

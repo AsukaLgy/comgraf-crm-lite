@@ -1,6 +1,6 @@
+import { useState } from 'react'
 import { Check } from 'lucide-react'
 import { Badge } from './components'
-import { money } from './api'
 import {
   PRODUCTION_STAGES,
   PRODUCTION_STAGE_LABELS,
@@ -10,7 +10,8 @@ import {
 
 const reason = { name: 'reason', label: 'Motivo del reclamo', type: 'textarea', required: true }
 
-export default function ProductionStages({ record, canManage, onSelectProduction, onConfirmFinished, confirmBusy, onSchedule, onDelivery, operation }) {
+export default function ProductionStages({ record, canManage, isAdmin, onAdminStage, onSelectProduction, onConfirmFinished, confirmBusy, onSchedule, onDelivery, operation }) {
+  const [adminBusy,setAdminBusy]=useState(false),[adminError,setAdminError]=useState('')
   const production = record.production
   const currentIndex = PRODUCTION_STAGES.indexOf(production.stage)
   const next = PRODUCTION_NEXT_STAGE[production.stage]
@@ -73,6 +74,29 @@ export default function ProductionStages({ record, canManage, onSelectProduction
             </select>
           </label>
         )}
+        {isAdmin && canManage && !production.cancelled_at && (
+          <div className="admin-stage-picker">
+            <label htmlFor="admin-stage">Cambiar etapa de {production.order_number}</label>
+            <select id="admin-stage" value={production.stage || ''}
+              disabled={adminBusy || Boolean(production.blocked_since) || record.delivery_status !== 'Pendiente'}
+              onChange={async (event) => {
+                setAdminBusy(true)
+                setAdminError('')
+                try { await onAdminStage(event.target.value) }
+                catch (error) { setAdminError(error.message) }
+                finally { setAdminBusy(false) }
+              }}>
+              {!production.stage && <option value="">Sin clasificar</option>}
+              {production.stage === PRODUCTION_STAGE.NEW && <option value="NEW" disabled>Nuevo</option>}
+              {PRODUCTION_STAGES.filter(stage => stage !== PRODUCTION_STAGE.NEW).map(stage =>
+                <option key={stage} value={stage}>{PRODUCTION_STAGE_LABELS[stage]}</option>)}
+            </select>
+            {adminBusy && <small>Actualizando…</small>}
+            {adminError && <small role="alert">{adminError}</small>}
+            {record.delivery_status !== 'Pendiente' && <small>La OP tiene entregas registradas; resuelve su situación de entrega antes de cambiar la etapa.</small>}
+            {production.blocked_since && <small>Resuelve el bloqueo antes de cambiar la etapa.</small>}
+          </div>
+        )}
       </div>
       <ol aria-label="Etapas de producción">
         {PRODUCTION_STAGES.map((stage, index) => (
@@ -105,14 +129,8 @@ export default function ProductionStages({ record, canManage, onSelectProduction
         <div className={production.cancellation_review_pending ? 'notice' : 'error'}>
           Producción anulada.
           {production.cancellation_review_pending
-            ? ' Resolución económica pendiente.'
-            : record.balance === undefined
-              ? ' Consulta el saldo con un usuario financiero.'
-              : record.balance < 0
-                ? ` Pendiente de devolución: ${money(-Number(record.balance), production.currency)}`
-                : record.balance > 0
-                  ? ` Saldo por cobrar: ${money(record.balance, production.currency)}`
-                  : ' Saldo liquidado.'}
+            ? ' Resolución económica pendiente en Entregas y cobros.'
+            : ' Consulta su situación económica en Entregas y cobros.'}
         </div>
       ) : (
         <div className="production-controls">
