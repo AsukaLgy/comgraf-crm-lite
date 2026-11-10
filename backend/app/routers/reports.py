@@ -1,12 +1,14 @@
-from collections import defaultdict
+from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import select, func
 from ..db import get_db
-from ..models import Case, Client, Item, Production, Task, Event, Quote, Delivery, now
+from ..models import Case, Client, Item, Production, Task, Delivery, now
 from ..security import current_user, require, can
-from ..repository import visibility, balance, row, delivery_status, local_day
+from ..repository import visibility, balance, row, delivery_status, local_day, today, case_query, _order_query, orders_count, order_item_predicates
 from ..schemas import STAGE_LABELS
+from ..config import settings
 
 router = APIRouter(prefix='/api', tags=['Calendario e indicadores'])
 
@@ -83,46 +85,62 @@ def unscheduled_collections(user=Depends(current_user), db=Depends(get_db, scope
 @router.get('/indicators')
 def indicators(user=Depends(current_user), db=Depends(get_db, scope='function')):
     require(db, user, 'reports')
-    cases = list(db.scalars(select(Case).where(visibility(db, user))))
-    ids = [c.id for c in cases]
-    events = list(db.scalars(select(Event).where(Event.case_id.in_(ids))))
-    quotes = list(db.scalars(select(Quote).where(Quote.case_id.in_(ids))))
-    first = [(c.first_response_at - c.created_at).total_seconds() for c in cases if c.first_response_at]
-    unassigned = [{'id': c.id, 'number': f'CG-{c.id:06d}', 'hours': round((now() - c.created_at).total_seconds() / 3600, 2)} for c in cases if c.owner_id is None and c.lifecycle == 'Activo']
-    stages = defaultdict(float)
-    blocked = 0
-    rework = 0
-    for e in events:
-        if e.data.get('action') == 'stage': stages[STAGE_LABELS.get(e.data['from'], e.data['from'])] += e.data.get('seconds', 0)
-        if e.data.get('action') in ('cancelled', 'delivery_completed') and e.data.get('stage'):
-            stages[STAGE_LABELS.get(e.data['stage'], e.data['stage'])] += e.data.get('seconds', 0)
-        if e.data.get('action') == 'unblocked': blocked += e.data.get('seconds', 0)
-        if e.data.get('rework') and e.data.get('action') == 'stage': rework += 1
-    financial = defaultdict(lambda: {'delivered_pending': Decimal(0), 'overdue': Decimal(0)})
-    completed, ontime = 0, 0
-    for case in cases:
-        for production in db.scalars(select(Production).where(Production.case_id == case.id)):
-            delivery = delivery_status(db, case.id, production.id)
-            if delivery != 'Completa' and not production.cancelled_at and production.stage:
-                stages[STAGE_LABELS.get(production.stage, production.stage)] += (now() - production.stage_started_at).total_seconds()
-            if production.blocked_since:
-                blocked += ((production.cancelled_at or now()) - production.blocked_since).total_seconds()
-            if delivery == 'Completa':
-                completed += 1
-                delivery_dates = list(db.scalars(select(Delivery.delivered_at).join(Item, Item.id == Delivery.item_id).where(Item.production_id == production.id)))
-                ontime += bool(production.original_committed_date and delivery_dates and max(local_day(d) for d in delivery_dates) <= production.original_committed_date)
-            b = balance(db, case.id, production.id)
-            if delivery != 'Pendiente': financial[production.currency]['delivered_pending'] += max(Decimal(0), Decimal(b['balance']))
-            financial[production.currency]['overdue'] += Decimal(b['overdue_balance'])
-    accepted = sum(q.status == 'Aceptada' for q in quotes)
-    converted = sum(c.mode == 'Producción' for c in cases)
-    return {'first_human_response_hours': round(sum(first) / len(first) / 3600, 2) if first else None,
-        'first_response_sample': len(first), 'unassigned': unassigned,
-        'overdue_followups': len(list(db.scalars(select(Task.id).join(Case, Case.id == Task.case_id).where(Task.case_id.in_(ids), Case.lifecycle == 'Activo', Task.done_at.is_(None), Task.due_at <= now())))),
-        'case_conversion': {'numerator': converted, 'denominator': len(cases)},
-        'quote_acceptance': {'numerator': accepted, 'denominator': len(quotes)},
-        'quote_conversion': {'numerator': len(list(db.scalars(select(Production.id).where(Production.case_id.in_(ids), Production.quote_id.is_not(None))))), 'denominator': accepted},
-        'stage_hours': {k: round(v / 3600, 2) for k, v in stages.items()}, 'blocked_hours': round(blocked / 3600, 2),
-        'rework_events': rework, 'on_time_deliveries': {'numerator': ontime, 'denominator': completed},
-        'financial': {currency: {k: str(v) for k, v in values.items()} for currency, values in financial.items()},
-        'manual_notice': 'Primera respuesta humana y puntualidad dependen de las interacciones y entregas registradas manualmente. Asignaciones y notas internas no cuentan como respuesta.'}
+    def count(query):
+        return db.scalar(select(func.count()).select_from(query.order_by(None).subquery())) or 0
+
+    can_see_finances = can(db, user, 'finance') or can(db, user, 'attention')
+    production_query = _order_query(db, user, 'production')
+    ready_query = _order_query(db, user, 'ready')
+    stages = {STAGE_LABELS.get(stage, 'Sin clasificar'): count(production_query.where(Production.stage == stage))
+              for stage in (None, 'NEW', 'APPROVAL', 'PRINTING', 'WORKSHOP')}
+    ready = count(ready_query)
+    late = orders_count(db, user, 'late')
+    result = {
+        'current': {
+            'unassigned_cases': count(case_query(db, user, {'view': 'pool'})),
+            'action_cases': count(case_query(db, user, {'view': 'action'})),
+            'production_by_stage': stages, 'late_orders': late, 'ready_orders': ready,
+        },
+        'pickup': {}, 'collection': None,
+        'period': {'from': str(today() - timedelta(days=29)), 'through': str(today())},
+    }
+    oldest_ready = db.execute(ready_query.order_by(None).order_by(Production.stage_started_at, Production.id).limit(5)).all()
+    result['oldest_ready'] = [{'id': order.id, 'case_id': case.id,
+                               'days': max(0, (now() - order.stage_started_at).days)}
+                              for order, case, _client in oldest_ready]
+    if can_see_finances:
+        result['pickup'] = {
+            'unpaid': count(_order_query(db, user, 'ready', {'pickup': 'unpaid'})),
+            'partial': count(_order_query(db, user, 'ready', {'pickup': 'partial'})),
+            'paid': count(_order_query(db, user, 'ready', {'pickup': 'paid'})),
+        }
+        collection_tasks = select(Task.id).join(Case, Case.id == Task.case_id).where(
+            visibility(db, user), Case.lifecycle == 'Activo', Task.purpose == 'COLLECTION', Task.done_at.is_(None))
+        result['collection'] = {
+            'delivered_pending': orders_count(db, user, 'delivered-balances'),
+            'delivered_overdue': orders_count(db, user, 'delivered-overdue'),
+            'followups_pending': count(collection_tasks),
+            'followups_overdue': count(collection_tasks.where(Task.due_at < now())),
+        }
+    # Entregas completas del período: una fila por OP y último instante real.
+    _has_item, _remaining_item, complete = order_item_predicates()
+    period_start = today() - timedelta(days=29)
+    local_zone = ZoneInfo(settings.app_timezone)
+    utc_start = datetime.combine(period_start, time.min, local_zone).astimezone(timezone.utc).replace(tzinfo=None)
+    utc_end = datetime.combine(today() + timedelta(days=1), time.min, local_zone).astimezone(timezone.utc).replace(tzinfo=None)
+    last_delivery = func.max(Delivery.delivered_at)
+    completed = db.execute(select(Production.id, Production.original_committed_date, last_delivery)
+        .join(Case, Case.id == Production.case_id)
+        .join(Item, Item.production_id == Production.id)
+        .join(Delivery, Delivery.item_id == Item.id)
+        .where(visibility(db, user), Production.cancelled_at.is_(None), complete)
+        .group_by(Production.id, Production.original_committed_date)
+        .having(last_delivery >= utc_start, last_delivery < utc_end)).all()
+    within_period = [(original, delivered) for _id, original, delivered in completed
+                     if period_start <= local_day(delivered) <= today()]
+    measured = [(original, delivered) for original, delivered in within_period if original]
+    result['compliance'] = {
+        'numerator': sum(local_day(delivered) <= original for original, delivered in measured),
+        'denominator': len(measured), 'without_original_date': len(within_period) - len(measured),
+    }
+    return result

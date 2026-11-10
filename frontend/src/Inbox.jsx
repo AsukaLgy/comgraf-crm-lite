@@ -16,7 +16,11 @@ export const VIEW_LABELS = {
   mine: 'Mis solicitudes',
   'mine-action': 'Requieren mi acción',
   production: 'Órdenes en producción',
+  late: 'Órdenes atrasadas',
+  'delivered-period': 'Órdenes entregadas del período',
   ready: 'Listos para entregar',
+  'delivered-balances': 'Entregadas con saldo',
+  'delivered-overdue': 'Entregadas con saldo vencido',
   balances: 'Saldos por cobrar',
   overdue: 'Cobros vencidos',
   refunds: 'Devoluciones pendientes',
@@ -32,11 +36,11 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
     [modal, setModal] = useState(null),
     [advanced, setAdvanced] = useState(false)
   const poolView = !home && !search && view === 'pool'
-  const orderView = !search && ['production', 'ready'].includes(view)
+  const orderView = !search && ['production', 'ready', 'late', 'delivered-period', 'delivered-balances', 'delivered-overdue'].includes(view)
   const key = `comgraf.filters.${user.id}.${home ? 'home' : view}`
   const [filters, setFilters] = useState(() => {
     try {
-      const stored = JSON.parse(sessionStorage.getItem(key)) || {}
+      const stored = { ...(JSON.parse(sessionStorage.getItem(key)) || {}), ...Object.fromEntries(new URLSearchParams(location.search)) }
       if (['action', 'mine-action'].includes(view)) {
         delete stored.status
         delete stored.lifecycle
@@ -91,8 +95,8 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
     queryFn: () => api('/counts'),
     refetchInterval: 30000,
   })
-  const activeOrderFilters = orderView && ['stage', 'due', 'blocked'].some((name) => compatibleFilters[name])
-  const orderGrandTotal = view === 'ready' ? counts.data?.ready_orders ?? 0 : counts.data?.production_orders ?? 0
+  const activeOrderFilters = orderView && ['stage', 'due', 'blocked', 'late', 'pickup'].some((name) => compatibleFilters[name])
+  const orderGrandTotal = view === 'ready' ? counts.data?.ready_orders ?? 0 : view === 'production' ? counts.data?.production_orders ?? 0 : list.data?.total ?? 0
   const saved = useQuery({ queryKey: ['views'], queryFn: () => api('/views') })
   const clients = useQuery({
     queryKey: ['clients-search', queryText],
@@ -179,16 +183,16 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
           </div>
         </section>
       )}
-      {['ready', 'balances', 'overdue', 'refunds', 'cancellation-review'].includes(view) && (
+      {['ready', 'delivered-balances', 'delivered-overdue', 'balances', 'overdue', 'refunds', 'cancellation-review'].includes(view) && (
         <div className="tabs section-tabs">
           {[
             'ready',
             ...(can(user, 'finance') || can(user, 'attention')
-              ? ['balances', 'overdue', 'refunds', 'cancellation-review']
+              ? ['delivered-balances', 'delivered-overdue', 'balances', 'overdue', 'refunds', 'cancellation-review']
               : []),
           ].map((v) => (
             <Link key={v} className={view === v ? 'active' : ''} to={'/inbox/' + v}>
-              {VIEW_LABELS[v]} <Badge>{counts.data?.[v] ?? 0}</Badge>
+              {VIEW_LABELS[v]} {counts.data?.[v] !== undefined && <Badge>{counts.data[v]}</Badge>}
             </Link>
           ))}
         </div>
@@ -220,7 +224,7 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
               </>
             ) : (
                 <h2>
-                {search ? 'Solicitudes' : VIEW_LABELS[view]} <Badge>{orderView?(view==='ready'?counts.data?.ready_orders??0:counts.data?.production_orders??0):list.data?.total ?? 0}</Badge>
+                {search ? 'Solicitudes' : VIEW_LABELS[view]} <Badge>{orderView ? orderGrandTotal : list.data?.total ?? 0}</Badge>
               </h2>
             )}
           </div>
@@ -296,7 +300,7 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
           <div className="filters advanced">
             <Select
               label="Etapa de producción"
-              options={PRODUCTION_STAGES.map(value=>({value,label:PRODUCTION_STAGE_LABELS[value]}))}
+              options={[{value:'unclassified',label:'Sin clasificar'},...PRODUCTION_STAGES.map(value=>({value,label:PRODUCTION_STAGE_LABELS[value]}))]}
               empty="Todas"
               value={filters.stage || ''}
               onChange={(e) => set('stage', e.target.value)}
@@ -319,6 +323,8 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
               value={filters.blocked || ''}
               onChange={(e) => set('blocked', e.target.value)}
             />
+            {orderView && <Select label="Atraso" options={[{ value: 'yes', label: 'Solo atrasadas' }]} empty="Todas" value={filters.late || ''} onChange={e => set('late', e.target.value)} />}
+            {view === 'ready' && (can(user, 'finance') || can(user, 'attention')) && <Select label="Situación para retiro" options={[{ value: 'unpaid', label: 'Sin pagos recibidos' }, { value: 'partial', label: 'Con anticipo y saldo' }, { value: 'paid', label: 'Pagadas' }]} empty="Todas" value={filters.pickup || ''} onChange={e => set('pickup', e.target.value)} />}
             {(can(user, 'attention') || can(user, 'finance')) && (
               <Select
                 label="Pago"
@@ -366,7 +372,7 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
         {list.isPending ? (
           <Loading />
         ) : (
-          list.data && (orderView ? <OrderTable items={list.data.items} showBalance={['ready','balances','overdue','refunds','cancellation-review'].includes(view) && can(user,'finance')}/> : <CaseTable items={list.data.items} remember={remember} user={user} showCreated={view==='pool'} />)
+          list.data && (orderView ? <OrderTable items={list.data.items} showBalance={can(user,'finance') || can(user,'attention')}/> : <CaseTable items={list.data.items} remember={remember} user={user} showCreated={view==='pool'} />)
         )}
         <div className="list-footer">
           <span>
@@ -389,7 +395,7 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
           </div>
         </div>
       </section>
-      {modal === 'new' && <NewCase user={user} creationContext={poolView ? 'pool' : 'personal'} onClose={() => setModal(null)} />}
+      {modal === 'new' && <NewCase user={user} creationContext={!home && ['mine', 'mine-action'].includes(view) ? 'personal' : 'pool'} onClose={() => setModal(null)} />}
       {modal === 'production-create' && <NewProductionRequest user={user} onClose={() => setModal(null)} />}
       {modal === 'save' && !poolView && (
         <FormDialog

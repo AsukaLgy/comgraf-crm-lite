@@ -1,4 +1,4 @@
-import {HNL_CURRENCY} from './domain'
+import {HNL_CURRENCY} from './domain.js'
 
 export const API_CONTRACT_VERSION = '5'
 export const PRODUCT_VERSION = '1.5.0'
@@ -49,8 +49,11 @@ export const money = (v, currency = HNL_CURRENCY) => new Intl.NumberFormat('es-H
 export const quantity = v => new Intl.NumberFormat('es-HN', {maximumFractionDigits:3}).format(Number(v||0))
 export let timezone = 'America/Tegucigalpa'
 export const setTimezone = value => { timezone = value }
-export const date = value => value ? new Intl.DateTimeFormat('es-HN', {timeZone: timezone, year:'numeric', month:'short', day:'2-digit', ...(value.includes('T') ? {hour:'2-digit',minute:'2-digit'} : {})}).format(new Date(value.length === 10 ? value + 'T12:00:00Z' : value)) : 'Sin fecha'
-export const dateHonduras = value => value ? new Intl.DateTimeFormat('es-HN', {timeZone:'America/Tegucigalpa',year:'numeric',month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(value)) : 'Sin fecha'
+const dateParts = value => new Date(`${value}T12:00:00-06:00`)
+export const formatDate = value => value ? new Intl.DateTimeFormat('es-HN', {timeZone: timezone, year:'numeric', month:'short', day:'2-digit'}).format(value.length === 10 ? dateParts(value) : new Date(value)) : 'Sin fecha'
+export const formatDateTime = value => value ? value.length === 10 ? formatDate(value) : new Intl.DateTimeFormat('es-HN', {timeZone: timezone, year:'numeric', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit'}).format(new Date(value)) : 'Sin fecha'
+export const date = formatDate
+export const dateHonduras = formatDateTime
 export const localDate = () => new Intl.DateTimeFormat('en-CA', {timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())
 export const dayKey = value => value.length === 10 ? value : new Intl.DateTimeFormat('en-CA', {timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(value))
 export const localInput = value => {

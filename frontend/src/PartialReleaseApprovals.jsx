@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, date, uid } from './api'
+import { api, formatDateTime, uid } from './api'
 import { Badge, Empty, ErrorBox, Field, FormDialog, Loading, Panel } from './components'
 
 export default function PartialReleaseApprovals() {
@@ -25,7 +25,7 @@ export default function PartialReleaseApprovals() {
     <ErrorBox error={query.error}/>
     {query.isPending ? <Loading/> : query.data?.length ? query.data.map((request) => <Panel key={request.id} title={`${request.order_number} · Solicitud ${request.case_number}`} action={<Badge tone="amber">Pendiente</Badge>}>
       <h3>{request.subject}</h3>
-      <p><strong>Solicitó:</strong> {request.requester} · {date(request.created_at)}</p>
+      <p><strong>Solicitó:</strong> {request.requester} · {formatDateTime(request.created_at)}</p>
       <p><strong>Motivo:</strong> {request.request_comment}</p>
       <p><strong>Etapa actual:</strong> {request.stage_label} · Ciclo {request.production_cycle}</p>
       {request.pending_orders.length > 0 && <><strong>Órdenes pendientes del grupo</strong><ul className="scanner-missing">{request.pending_orders.map((order) => <li key={order.production_id}>{order.order_number} · {order.stage_label} · {order.reason}</li>)}</ul></>}

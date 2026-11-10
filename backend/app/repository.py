@@ -1,10 +1,10 @@
 import re
 import unicodedata
-from datetime import datetime, timezone, date as date_type
+from datetime import datetime, timezone, date as date_type, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 from fastapi import HTTPException
-from sqlalchemy import select, or_, func, case as sql_case, and_, not_, literal
+from sqlalchemy import select, or_, func, case as sql_case, and_, not_, literal, text
 from sqlalchemy.orm import aliased
 from .models import Attachment, Case, Client, Delivery, Draft, Event, Item, Ledger, MailAttachment, MailMessage, Production, Quote, Task, User, now
 from .security import cached_permissions, can
@@ -54,8 +54,9 @@ def row(obj, exclude=()):
 
 def item_row(obj, exclude=()):
     result = row(obj, exclude)
-    if result and result.get('product') == 'Talonarios de factura CAI':
-        from .cai import cai_summary
+    if result:
+        from .cai import cai_summary, uses_print_form
+    if result and uses_print_form(result.get('product')):
         result['cai_summary'] = cai_summary(result)
     return result
 
@@ -275,6 +276,20 @@ def case_detail(db, user, case, production_id=None):
             if selected_obj.cancelled_at and selected_obj.cancellation_review_pending:
                 result['payment_status'] = 'Revisión de anulación'
                 result['overdue_balance'] = '0.00'
+    if commercial:
+        order_ids = [order['id'] for order in result['productions']]
+        totals = {}
+        if order_ids:
+            for production_key, currency, amount, received in db.execute(
+                select(Ledger.production_id, Ledger.currency, func.sum(Ledger.amount),
+                       func.sum(sql_case((Ledger.kind.in_(('Anticipo', 'Abono', 'Reversión de pago')), -Ledger.amount), else_=0)))
+                .where(Ledger.production_id.in_(order_ids))
+                .group_by(Ledger.production_id, Ledger.currency)):
+                totals.setdefault(production_key, []).append((currency, amount, received))
+        for order in result['productions']:
+            rows = totals.get(order['id'], [])
+            order['balance'] = str(rows[0][1]) if len(rows) == 1 else '0' if not rows else None
+            order['payments_received'] = str(rows[0][2]) if len(rows) == 1 else '0' if not rows else None
     for name, model in [('events', Event), ('tasks', Task), ('items', Item), ('attachments', Attachment), ('deliveries', Delivery)]:
         query = select(model).where(model.case_id == case.id)
         if model == Item and selected_production_id is not None: query = query.where(Item.production_id == selected_production_id)
@@ -290,7 +305,8 @@ def case_detail(db, user, case, production_id=None):
         for quote in db.scalars(select(Quote).where(Quote.case_id == case.id).order_by(Quote.version)):
             value = row(quote)
             from .cai import cai_summary
-            value['items'] = [{**item, **({'cai_summary': cai_summary(item)} if item.get('product') == 'Talonarios de factura CAI' else {})} for item in value.get('items', [])]
+            from .cai import uses_print_form
+            value['items'] = [{**item, **({'cai_summary': cai_summary(item)} if uses_print_form(item.get('product')) else {})} for item in value.get('items', [])]
             linked = db.scalar(select(Production.id).where(Production.quote_id == quote.id))
             value['production_id'] = linked
             value['order_number'] = f'OP-{linked:05d}' if linked else None
@@ -518,18 +534,51 @@ def case_counts(db, user):
 
 def _order_query(db, user, view, filters=None):
     filters = filters or {}
+    financial = can(db, user, 'finance') or can(db, user, 'attention')
     _has_item, _remaining_item, complete = order_item_predicates()
     query = select(Production, Case, Client).join(Case, Case.id == Production.case_id).join(Client, Client.id == Case.client_id).where(
-        visibility(db, user), Case.lifecycle == 'Activo', Production.cancelled_at.is_(None), not_(complete))
+        visibility(db, user), Production.cancelled_at.is_(None))
+    if view != 'delivered-period': query = query.where(Case.lifecycle == 'Activo')
+    if view in ('ready', 'production', 'late'): query = query.where(not_(complete))
     if view == 'ready': query = query.where(ready_order_predicate())
     elif view == 'production': query = query.where(or_(Production.stage.is_(None), Production.stage != 'READY'))
+    elif view == 'late': query = query.where(Production.committed_date < today(),
+        or_(Production.stage.is_(None), Production.stage != 'READY', ready_order_predicate()))
+    elif view == 'delivered-period':
+        last_delivery = select(func.max(Delivery.delivered_at)).join(Item, Item.id == Delivery.item_id).where(
+            Item.production_id == Production.id).correlate(Production).scalar_subquery()
+        local_delivery_day = func.date(func.date_sub(last_delivery, text('INTERVAL 6 HOUR')))
+        query = query.where(complete, local_delivery_day >= today() - timedelta(days=29), local_delivery_day <= today())
+        if filters.get('commitment') == 'dated': query = query.where(Production.original_committed_date.is_not(None))
+        elif filters.get('commitment') == 'missing': query = query.where(Production.original_committed_date.is_(None))
+        elif filters.get('commitment') == 'ontime': query = query.where(Production.original_committed_date.is_not(None), local_delivery_day <= Production.original_committed_date)
+        elif filters.get('commitment'): raise HTTPException(422, 'Filtro de cumplimiento no reconocido')
+    elif view in ('delivered-balances', 'delivered-overdue'):
+        if not financial: raise HTTPException(403, 'No tienes acceso a los saldos')
+        total = func.coalesce(select(func.sum(Ledger.amount)).where(Ledger.production_id == Production.id).correlate(Production).scalar_subquery(), 0)
+        overdue_charges = func.coalesce(select(func.sum(Ledger.amount)).where(
+            Ledger.production_id == Production.id, Ledger.amount > 0, Ledger.due_date < today()).correlate(Production).scalar_subquery(), 0)
+        credits = func.coalesce(select(func.sum(-Ledger.amount)).where(
+            Ledger.production_id == Production.id, Ledger.amount < 0).correlate(Production).scalar_subquery(), 0)
+        query = query.where(complete, total > 0)
+        if view == 'delivered-overdue': query = query.where(overdue_charges > credits)
     elif view != 'production': raise HTTPException(422, 'Bandeja de órdenes no reconocida')
-    if filters.get('stage'): query = query.where(Production.stage == filters['stage'])
+    if filters.get('stage'): query = query.where(Production.stage.is_(None) if filters['stage'] == 'unclassified' else Production.stage == filters['stage'])
     if filters.get('due'):
         try: due_date = date_type.fromisoformat(str(filters['due']))
         except ValueError: raise HTTPException(422, 'due debe usar formato YYYY-MM-DD')
         query = query.where(Production.committed_date <= due_date)
     if filters.get('blocked') == 'yes': query = query.where(Production.blocked_since.is_not(None))
+    if filters.get('late') == 'yes': query = query.where(Production.committed_date < today())
+    if filters.get('pickup'):
+        if not financial: raise HTTPException(403, 'No tienes acceso al estado de cobro')
+        received = func.coalesce(select(func.sum(sql_case((Ledger.kind.in_(('Anticipo', 'Abono', 'Reversión de pago')), -Ledger.amount), else_=0)))
+                                .where(Ledger.production_id == Production.id).correlate(Production).scalar_subquery(), 0)
+        total = func.coalesce(select(func.sum(Ledger.amount)).where(Ledger.production_id == Production.id).correlate(Production).scalar_subquery(), 0)
+        if filters['pickup'] == 'unpaid': query = query.where(received <= 0)
+        elif filters['pickup'] == 'partial': query = query.where(received > 0, total > 0)
+        elif filters['pickup'] == 'paid': query = query.where(total <= 0)
+        else: raise HTTPException(422, 'Filtro de retiro no reconocido')
     return query.order_by(sql_case((Production.committed_date.is_(None), 1), else_=0), Production.committed_date.asc(), Production.id.asc())
 
 

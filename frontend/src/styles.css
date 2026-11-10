@@ -298,3 +298,9 @@ dialog .integrated-create-section .autocomplete{min-width:min(100%,280px)}
 .unscheduled-collections{padding:12px 17px}
 .calendar-event.collection-missing{display:flex;color:inherit;border-color:#a52c37;background:#fff8f8}
 @media print{.print-brand-lockup img{width:18mm;height:18mm}.cai-print-brand{min-height:16mm}.cai-print-brand img{width:15mm;height:15mm}}
+
+/* Indicadores: las cinco etapas son una sola fila compacta en escritorio. */
+.stage-metrics{grid-template-columns:repeat(5,minmax(0,1fr))}
+.stage-metrics .metric{min-height:92px;padding:13px}
+@media(max-width:1100px){.stage-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:640px){.stage-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}

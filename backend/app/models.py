@@ -192,7 +192,7 @@ class Production(Base):
     currency = Column(String(3), nullable=False, default='HNL')
     payment_terms = Column(String(240), nullable=False, default='Contado')
     advance_required = Column(Numeric(14, 2), nullable=False, default=0)
-    payment_due_date = Column(Date, nullable=False)
+    payment_due_date = Column(Date)
     delivery_method = Column(String(120), nullable=False)
     instructions = Column(Text, nullable=False, default='')
     specs_snapshot = Column(JSON)

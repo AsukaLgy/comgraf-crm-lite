@@ -30,13 +30,20 @@ export const CASE_PRIORITIES = Object.freeze(['Baja', 'Normal', 'Alta', 'Urgente
 export const PRODUCT = Object.freeze({
   BUSINESS_CARDS: 'Tarjetas de presentación',
   FORMS: 'Talonarios y facturas',
-  CAI_FORMS: 'Talonarios de factura CAI',
+  CAI_RECEIPTS: 'Recibos por honorarios (CAI)',
+  CAI_INVOICES: 'Facturas (CAI)',
+  CAI_OTHER: 'Otros (CAI)',
   FLYERS: 'Volantes y flyers',
   NOTEBOOKS: 'Libretas y cuadernos',
   BANNERS: 'Banners y lonas',
   OTHER: 'Otros trabajos',
 })
 
+export const LEGACY_CAI_PRODUCT = 'Talonarios de factura CAI'
+export const CAI_PRODUCTS = Object.freeze([PRODUCT.CAI_RECEIPTS, PRODUCT.CAI_INVOICES, PRODUCT.CAI_OTHER, LEGACY_CAI_PRODUCT])
+export const PRINT_FORM_PRODUCTS = Object.freeze([PRODUCT.FORMS, ...CAI_PRODUCTS])
+export const isCaiProduct = product => CAI_PRODUCTS.includes(product)
+export const usesPrintForm = product => PRINT_FORM_PRODUCTS.includes(product)
 export const PRODUCTS = Object.freeze(Object.values(PRODUCT))
 export const PAYMENT_TERMS = Object.freeze(['Contado', 'Crédito'])
 export const HNL_CURRENCY = 'HNL'

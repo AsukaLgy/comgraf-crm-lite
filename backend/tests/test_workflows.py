@@ -51,7 +51,7 @@ def release_single_order(clients, case):
 def complete_delivery(api, case, production_id=None, method='Retiro en local'):
     production_id = production_id or case['production']['id']
     payload = {'version': case['version'], 'key': key(), 'production_id': production_id, 'method': method,
-               'receiver': 'Cliente', 'evidence': 'Entrega completa'}
+               'receiver': 'Cliente', 'evidence': 'Entrega completa', 'balance_reason': 'Entrega excepcional de prueba'}
     return must(api.post(f"/api/cases/{case['id']}/deliveries/complete", json=payload))
 
 
@@ -202,7 +202,7 @@ def test_atomic_production_request_rolls_back_and_retries_without_duplicates(cli
     assert must(api.get('/api/cases', params={'view': 'all'}))['total'] == before
     result = must(operator.post('/api/production-requests', json=base), 201)
     assert result['kind'] == 'Solicitud' and result['mode'] == 'Producción'
-    assert result['owner_id'] == accounts['printer']['id'] and result['production']['stage'] == 'APPROVAL'
+    assert result['owner_id'] is None and result['production']['stage'] == 'APPROVAL'
     replay = must(operator.post('/api/production-requests', json=base), 201)
     assert replay['id'] == result['id'] and replay['production']['id'] == result['production']['id']
     reused = {**base, 'subject': 'Contenido diferente'}
@@ -238,7 +238,7 @@ def test_concurrent_complete_delivery_creates_one_operation(clients):
     case = release_single_order(clients, case)
     payloads = [
         {'version': case['version'], 'key': key(), 'production_id': case['production']['id'], 'method': method,
-         'receiver': 'Cliente', 'evidence': 'Concurrencia'}
+         'receiver': 'Cliente', 'evidence': 'Concurrencia', 'balance_reason': 'Entrega excepcional de prueba'}
         for method in ('Retiro en local', 'Entrega (delivery)')
     ]
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -679,7 +679,7 @@ def test_reassignment_moves_active_work_between_personal_views(clients,accounts)
     assert must(agent2.get('/api/cases?view=mine-action'))['total']==1
 
 
-def test_automatic_production_completion_waits_for_delivery_payment_and_tasks(clients,accounts):
+def test_manual_production_completion_waits_for_delivery_payment_and_tasks(clients,accounts):
     api=clients['admin'];_,c=create(api,'Completar producción resuelta')
     c=mutate(api,c,'take');c=mutate(api,c,'convert',conversion())
     c=release_single_order(clients,c)
@@ -695,16 +695,19 @@ def test_automatic_production_completion_waits_for_delivery_payment_and_tasks(cl
     assert must(api.get('/api/cases?view=mine'))['total']==1
     task=next(t for t in c['tasks'] if t['title']=='Confirmar entrega final')
     c=mutate(api,c,f'tasks/{task["id"]}/complete')
+    assert c['lifecycle']=='Activo'
+    c=mutate(api,c,'complete')
     assert c['lifecycle']=='Completado' and c['status']=='Cerrado' and c['owner_id']==accounts['admin']['id']
     completed=[e for e in c['events'] if e['data'].get('action')=='case_completed']
-    assert len(completed)==1 and completed[0]['data']['origin']=='automatic'
-    assert completed[0]['data']['action_trigger']=='followup_resolved'
+    assert len(completed)==1 and completed[0]['data']['origin']=='manual'
     assert must(api.get('/api/cases?view=mine'))['total']==0
     assert must(api.get('/api/cases?view=finalized'))['total']==1
     c=mutate(api,c,'reactivate')
     assert c['lifecycle']=='Activo'
     assert must(api.get(f'/api/cases/{c["id"]}'))['lifecycle']=='Activo'
     c=mutate(api,c,'attention',{'status':'Cerrado'})
+    assert c['lifecycle']=='Activo'
+    c=mutate(api,c,'complete')
     assert c['lifecycle']=='Completado'
     assert len([e for e in c['events'] if e['data'].get('action')=='case_completed'])==2
 
@@ -860,7 +863,7 @@ def test_complete_delivery_is_idempotent_and_cannot_register_partial_quantities_
     assert c['production']['stage']==stage and c['owner_id']==owner
     assert must(api.get('/api/cases?view=mine'))['total']==1
     assert must(api.get('/api/cases?view=action'))['total']==0
-    payload={'version':c['version'],'key':key(),'production_id':c['production']['id'],'method':'Retiro en local','receiver':'Cliente','evidence':'Recibo 01'}
+    payload={'version':c['version'],'key':key(),'production_id':c['production']['id'],'method':'Retiro en local','receiver':'Cliente','evidence':'Recibo 01','balance_reason':'Entrega excepcional de prueba'}
     rejected=api.post(f'/api/cases/{c["id"]}/deliveries',json={'version':c['version'],'key':key(),'production_id':c['production']['id'],'item_id':c['items'][0]['id'],'quantity':'1','delivered_at':datetime.now(timezone.utc).isoformat(),'receiver':'Cliente','method':'Retiro','evidence':'Parcial'})
     assert rejected.status_code==410
     unchanged=must(api.get(f'/api/cases/{c["id"]}'))
@@ -1026,15 +1029,14 @@ def test_production_quote_delivery_debt_and_idempotent_payment(clients,accounts)
     assert Decimal(c['overdue_balance'])==Decimal('900')
     c=mutate(api,c,'payments',{'amount':'900','reference':'Recibo 002'})
     assert c['payment_status']=='Pagado'
-    assert c['lifecycle']=='Completado'
+    assert c['lifecycle']=='Activo'
     assert clients['scanner'].post('/api/scanner/scan',json={'scan_id':'CGOP1:'+c['production']['scan_id']}).status_code==409
-    c=mutate(api,c,'reactivate')
     entry=c['ledger'][-1]['id']
     c=mutate(api,c,f'payments/{entry}/reverse',{'reason':'Transferencia rechazada'})
     assert c['balance']=='900.00'
     mutate(api,c,f'payments/{entry}/reverse',{'reason':'No duplicar reversión'},409)
     kpi=must(api.get('/api/indicators'))
-    assert kpi['rework_events']==1 and kpi['case_conversion']['numerator']==1
+    assert kpi['collection']['delivered_pending']==1
 
 
 def test_simultaneous_take_convert_and_payment(clients,accounts):
@@ -1118,7 +1120,8 @@ def test_cancellation_without_payment_clears_charge_and_cannot_fake_refund(clien
     assert len([x for x in c['ledger'] if x['kind']=='Ajuste de anulación'])==1
     assert c['production']['active_elapsed_seconds'] is None
     c=mutate(api,c,'attention',{'status':'Cerrado'})
-    assert c['lifecycle']=='Completado'
+    assert c['lifecycle']=='Activo'
+    c=mutate(api,c,'complete')
     assert api.get('/api/cases?view=mine').json()['total']==0
     assert api.get('/api/cases?view=finalized').json()['total']==1
 

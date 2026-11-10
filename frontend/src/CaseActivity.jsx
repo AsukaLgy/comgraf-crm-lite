@@ -1,6 +1,6 @@
 import { Clock, MessageSquare } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { date } from './api'
+import { formatDateTime } from './api'
 import { Badge, Empty, Panel } from './components'
 import Composer from './Composer'
 
@@ -28,7 +28,7 @@ export default function CaseActivity({ record, attention, user, person, onRefere
                   <strong>{event.kind}</strong>
                   <span>{event.channel !== 'Sistema' && event.channel}</span>
                   <span>{person(event.actor_id)}</span>
-                  <time>{date(event.created_at)}</time>
+                  <time>{formatDateTime(event.created_at)}</time>
                 </div>
                 <p>{event.data?.action === 'stage' ? event.body.replace('Taller', 'Encuadernación') : event.body}</p>
                 {orderId && event.data?.action !== 'converted' && (
@@ -70,7 +70,7 @@ export default function CaseActivity({ record, attention, user, person, onRefere
         <h3>Correos históricos vinculados</h3>
         <p className="muted">Estos mensajes son de solo lectura. El estado de los pendientes no ha cambiado.</p>
         {record.email_messages.map((message) => <article className="historical-message" key={message.id}>
-          <div className="event-meta"><strong>Correo · {message.direction}</strong><span>{message.sender || 'Remitente no registrado'}</span><time>{date(message.received_at || message.created_at)}</time></div>
+          <div className="event-meta"><strong>Correo · {message.direction}</strong><span>{message.sender || 'Remitente no registrado'}</span><time>{formatDateTime(message.received_at || message.created_at)}</time></div>
           <p><strong>{message.subject || '(Sin asunto)'}</strong></p>
           {message.to?.length > 0 && <small>Para: {message.to.join(', ')}</small>}
           <p><small>Estado histórico: {message.status}</small></p>

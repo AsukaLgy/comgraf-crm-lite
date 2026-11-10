@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Plus, Paperclip, Printer } from 'lucide-react'
-import { api, can, date, money, quantity, toUTC, timezone, localInput, uid } from './api'
+import { api, can, date, formatDateTime, money, quantity, toUTC, timezone, localInput, uid } from './api'
 import { Badge, ErrorBox, Loading, Panel, Operation, FormDialog, Field, Empty } from './components'
 import ProductForm, { Specifications } from './ProductForm'
 import CaseAttention from './CaseAttention'
@@ -10,6 +10,7 @@ import CaseActivity from './CaseActivity'
 import CasePrintSheet from './CasePrintSheet'
 import OrderQRCode from './OrderQRCode'
 import DeliveryFinance from './DeliveryFinance'
+import CompleteDeliveryDialog from './CompleteDeliveryDialog'
 import ProductionStages from './ProductionStages'
 import { HNL_CURRENCY } from './domain'
 import DeleteDialog from './DeleteDialog'
@@ -168,31 +169,7 @@ export default function CasePage({ user, print = false }) {
   function delivery() {
     const eligible = (c.productions || []).filter((order) => !order.cancelled_at && !order.blocked_since && !order.classification_required && order.stage === 'READY' && order.delivery_status !== 'Completa')
     if (!eligible.length) return
-    operation(
-      'deliveries/complete',
-      'Registrar entrega',
-      [
-        ...(eligible.length > 1 ? [{ name: 'production_id', label: 'Orden que se entregará', options: eligible.map((order) => ({ value: order.id, label: `${order.order_number} · ${order.description || 'Trabajo'}` })), required: true }] : []),
-        { name: 'method', label: 'Modalidad', options: ['Retiro en local', { value: 'Entrega (delivery)', label: 'Entrega a domicilio' }], required: true },
-        { name: 'receiver', label: 'Recibido por (opcional)' },
-        {
-          name: 'evidence',
-          label: 'Evidencia / referencia (opcional)',
-          type: 'textarea',
-        },
-      ],
-      {
-        production_id: String(eligible.find((order) => order.id === p?.id)?.id || eligible[0].id),
-        method: 'Retiro en local',
-      },
-      (v) => {
-        const selected = eligible.length === 1 ? eligible[0].id : Number(v.production_id)
-        return { production_id: selected, method: v.method, receiver: v.receiver || '', evidence: v.evidence || '' }
-      },
-      undefined,
-      'POST',
-      <p className="notice">{eligible.length === 1 ? `Se entregará completa la orden ${eligible[0].order_number}. La fecha y hora se asignarán al guardar.` : 'Se registrará la entrega completa de una sola orden. La fecha y hora se asignarán al guardar.'}</p>,
-    )
+    setModal({ type: 'complete_delivery', orders: eligible })
   }
   if (print) return <CasePrintSheet id={id} record={c} person={person} />
   return (
@@ -569,7 +546,7 @@ export default function CasePage({ user, print = false }) {
                     <a href={'/api/attachments/' + a.id}>{a.name}</a>
                     <small>
                       Versión del arte: {a.art_version || 'Sin versión'} ·{' '}
-                      {(a.size / 1024).toFixed(1)} KB · {date(a.created_at)}
+                      {(a.size / 1024).toFixed(1)} KB · {formatDateTime(a.created_at)}
                     </small>
                   </div>
                 </div>
@@ -646,7 +623,7 @@ export default function CasePage({ user, print = false }) {
                 <strong>{t.title}</strong>
                 <Badge>{t.purpose === 'COLLECTION' ? 'Seguimiento de cobro' : 'Seguimiento de atención'}</Badge>
                 <small>
-                  {date(t.due_at)} · {person(t.owner_id)}
+                  {formatDateTime(t.due_at)} · {person(t.owner_id)}
                 </small>
                 {t.done_at ? (
                   <Badge tone="teal">Completado</Badge>
@@ -727,7 +704,7 @@ export default function CasePage({ user, print = false }) {
                 <dt>Compromiso actual</dt>
                 <dd>{date(p.committed_date)}</dd>
                 <dt>Programación</dt>
-                <dd>{date(p.scheduled_at)}</dd>
+                <dd>{formatDateTime(p.scheduled_at)}</dd>
                 <dt>Entrega</dt>
                 <dd>{p.delivery_method}</dd>
               </dl>
@@ -737,12 +714,13 @@ export default function CasePage({ user, print = false }) {
             <Panel title="Cierre de atención">
               <p>{c.close_reason}</p>
               <p>{c.close_summary}</p>
-              <small>{date(c.closed_at)}</small>
+              <small>{formatDateTime(c.closed_at)}</small>
             </Panel>
           )}
         </aside>
       </div>
       {modal?.type === 'operation' && <Operation {...modal} record={c} onClose={close} />}{' '}
+      {modal?.type === 'complete_delivery' && <CompleteDeliveryDialog record={c} orders={modal.orders} financial={finance || can(user, 'attention')} canCollect={finance} onClose={close} />}
       {modal?.type === 'confirm_finished' && modal.caseId === c.id &&
         modal.productionId === p?.id && modal.selectionKey === selectedProductionId && (
         <FormDialog

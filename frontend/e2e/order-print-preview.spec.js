@@ -165,19 +165,18 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
   expect(await decodedPreviewQr(page)).toBe(`CGOP1:${secondOrder.scan_id}`)
   await page.screenshot({ path: '../.runtime/order-preview-cai.png', fullPage: true })
 
-  await page.evaluate(() => {
-    window.__printCalls = 0
-    window.print = () => {
-      window.__printCalls += 1
-    }
-  })
-  await page.getByRole('button', { name: 'Imprimir orden de producción' }).click()
-  expect(await page.evaluate(() => window.__printCalls)).toBe(1)
-  await page.pdf({
+  const printLink = page.locator('a[target="_blank"]').filter({ hasText: 'Imprimir orden de producción' })
+  await expect(printLink).toHaveAttribute('href', `/cases/${record.id}/print?production_id=${secondOrder.id}`)
+  const popupPromise = page.waitForEvent('popup')
+  await printLink.click()
+  const printPage = await popupPromise
+  await expect(printPage.locator('.cai-print')).toBeVisible()
+  await printPage.pdf({
     path: '../.runtime/order-preview-cai.pdf',
     preferCSSPageSize: true,
     printBackground: true,
   })
+  await printPage.close()
   await page.goto(`/cases/${record.id}?production_id=${secondOrder.id}&tab=production`)
   await page.getByRole('button', { name: /^Archivos/ }).click()
   await expect(page.getByRole('button', { name: /^Archivos/ })).toHaveClass(/active/)

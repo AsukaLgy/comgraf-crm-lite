@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom'
 import { Printer } from 'lucide-react'
-import { date } from './api'
+import { date, formatDateTime } from './api'
 import { Specifications } from './ProductForm'
+import { isCaiProduct } from './domain'
 import OrderQRCode from './OrderQRCode'
 
 const caiDimensions = {
@@ -30,7 +31,7 @@ export default function CasePrintSheet({ id, record, person, preview = false }) 
   const production = record.production
   const printItems =
     production?.specs_snapshot?.items || production?.approved_snapshot?.items || record.items || []
-  const isCai = printItems.some((item) => item.product === 'Talonarios de factura CAI')
+  const isCai = printItems.some((item) => isCaiProduct(item.product))
   if (production && isCai) {
     const identity = production.client_snapshot || {
       company: record.client.company || '',
@@ -58,10 +59,10 @@ export default function CasePrintSheet({ id, record, person, preview = false }) 
               <strong>{production.order_number}</strong>
               <span>Solicitud {record.number}</span>
             </div>
-            <h1>Orden de producción — Talonarios de factura CAI</h1>
+            <h1>Orden de producción — {printItems.map(item => item.product).filter((value, index, all) => all.indexOf(value) === index).join(', ')}</h1>
             <div className="cai-meta">
               <span>
-                <b>Creada:</b> {date(production.created_at)}
+                <b>Creada:</b> {formatDateTime(production.created_at)}
               </span>
               {production.committed_date && (
                 <span>
@@ -74,7 +75,7 @@ export default function CasePrintSheet({ id, record, person, preview = false }) 
             <OrderQRCode
               production={production}
               caseNumber={record.number}
-              description="Talonarios de factura CAI"
+              description={printItems.map(item => item.product).join(", ")}
               client={identity.company || identity.person}
               numberBelow
             />
@@ -194,7 +195,7 @@ export default function CasePrintSheet({ id, record, person, preview = false }) 
         <>
           <h2>{record.subject}</h2>
           <p>
-            Cliente: {record.client.name} · Responsable de la solicitud: {person(record.owner_id)}
+            Cliente: {record.client.name} · Responsable de la solicitud: {person?.(record.owner_id) || record.owner_name || 'Sin asignar'}
           </p>
           <p>
             Compromiso: {date(production.committed_date)} · Etapa:{' '}

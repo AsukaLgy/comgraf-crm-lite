@@ -116,15 +116,11 @@ def create_production_request(data: s.ProductionRequestInput, user=Depends(curre
         case = get_case(db, user, previous.case_id)
         production_id = db.scalar(select(Production.id).where(Production.case_id == case.id).order_by(Production.id.desc()).limit(1))
         return case_response(db, user, case, production_id)
-    pending = attention_predicates()['pending_assignment']
-    count = db.scalar(select(func.count()).select_from(Case).where(Case.owner_id == user.id, pending))
-    if count >= user.capacity:
-        raise HTTPException(409, 'Alcanzaste tu capacidad de solicitudes pendientes (atención, producción, seguimiento o saldo)')
     if not db.get(Client, data.client_id): raise HTTPException(422, 'Cliente no encontrado')
     contact = db.get(Contact, data.contact_id) if data.contact_id else None
     if data.contact_id and (not contact or contact.client_id != data.client_id): raise HTTPException(422, 'El contacto no pertenece al cliente')
     case = Case(client_id=data.client_id, contact_id=data.contact_id, subject=data.subject, description=data.description,
-                kind='Solicitud', priority=data.priority, mode='Producción', owner_id=user.id)
+                kind='Solicitud', priority=data.priority, mode='Producción', owner_id=None)
     db.add(case)
     db.flush()
     service.event(db, case, user, 'Solicitud de orden de producción creada', data={'action': 'created'})

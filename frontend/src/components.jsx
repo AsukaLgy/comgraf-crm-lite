@@ -170,7 +170,7 @@ export function FormDialog({
             Cancelar
           </button>
           <button className="primary" disabled={busy || !canSubmit}>
-            {busy ? busyLabel : submit}
+            {busy ? busyLabel : typeof submit === 'function' ? submit(values) : submit}
           </button>
         </footer>
       </form>}

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, localDate, money, uid } from './api'
+import { api, money, uid } from './api'
 import { ErrorBox, Field, FormDialog, Select } from './components'
 import { ClientAutocomplete } from './NewCase'
 import { ItemsEditor, cleanItems, newItem } from './ProductForm'
@@ -12,7 +12,7 @@ export default function NewProductionRequest({ user, onClose }) {
   const initial = {
     client_id: '', contact_id: '', subject: '', priority: 'Normal', description: '',
     items: [newItem()], requested_date: '', committed_date: '', payment_terms: PAYMENT_TERMS[0],
-    advance_required: '0', payment_due_date: localDate(), delivery_method: 'Retiro en taller', instructions: '',
+    advance_required: '0', payment_due_date: '', delivery_method: 'Retiro en taller', instructions: '',
     phone: '', email: '', quote_id: '',
   }
   async function save(v) {
@@ -24,7 +24,7 @@ export default function NewProductionRequest({ user, onClose }) {
       priority: v.priority, currency: 'HNL', quote_id: null,
       items: cleanItems(v.items), requested_date: v.requested_date || null,
       committed_date: v.committed_date || null,
-      advance_required: String(v.advance_required || '0'), payment_due_date: v.payment_due_date,
+      advance_required: String(v.advance_required || '0'), payment_due_date: v.payment_due_date || null,
     }
     const signature = JSON.stringify(body)
     if (idempotency.current.signature && idempotency.current.signature !== signature) idempotency.current.key = uid()
@@ -62,7 +62,7 @@ export default function NewProductionRequest({ user, onClose }) {
         <Select label="Prioridad" options={['Baja', 'Normal', 'Alta', 'Urgente']} value={v.priority} onChange={(e) => set('priority', e.target.value)} />
         <Field label="Descripción (opcional)" className="full"><textarea rows={3} value={v.description} onChange={(e) => set('description', e.target.value)} /></Field>
       </div>
-      <p className="muted">Tipo: Orden de producción · Se asignará a tu usuario.</p>
+      <p className="muted">Tipo: Orden de producción · Se creará sin asignar en Pool general.</p>
     </section>
     <section className="integrated-create-section">
       <h3>Trabajo a producir</h3>
@@ -72,7 +72,7 @@ export default function NewProductionRequest({ user, onClose }) {
         <Field label="Fecha comprometida" type="date" value={v.committed_date} onChange={(e) => set('committed_date', e.target.value)} />
         <Select label="Condición de pago" options={PAYMENT_TERMS} value={v.payment_terms} onChange={(e) => set('payment_terms', e.target.value)} />
         <Field label="Anticipo requerido (HNL)" type="number" min="0" step="0.01" required value={v.advance_required} onChange={(e) => set('advance_required', e.target.value)} />
-        <Field label="Vencimiento del saldo" type="date" required value={v.payment_due_date} onChange={(e) => set('payment_due_date', e.target.value)} />
+        <Field label="Vencimiento del saldo (si está acordado)" type="date" value={v.payment_due_date} onChange={(e) => set('payment_due_date', e.target.value)} />
         <Field label="Modalidad de entrega" required value={v.delivery_method} onChange={(e) => set('delivery_method', e.target.value)} />
         <Field label="Instrucciones de taller" className="full"><textarea rows={3} value={v.instructions} onChange={(e) => set('instructions', e.target.value)} /></Field>
       </div>

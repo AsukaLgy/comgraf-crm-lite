@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BrowserQRCodeReader } from '@zxing/browser'
 import { Camera, CheckCircle2, LogOut, RefreshCw, ScanLine, ShieldAlert } from 'lucide-react'
-import { api, date, uid } from './api'
+import { api, formatDateTime, uid } from './api'
 import { ErrorBox } from './components'
 import Brand from './Brand'
 import './BindingScanner.css'
@@ -180,7 +180,7 @@ export default function BindingScanner({ user, onLogout }) {
               <p>{order.client} · {order.subject}</p>
               {qr&&<div className="scanner-title-edit">{editingTitle?<><input aria-label="Título de la solicitud" maxLength={240} autoFocus value={titleDraft} onChange={e=>setTitleDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();void saveScannedTitle()}if(e.key==='Escape')setEditingTitle(false)}}/><button type="button" disabled={titleBusy||!titleDraft.trim()} onClick={()=>void saveScannedTitle()}>{titleBusy?'Guardando…':'Guardar título'}</button><button type="button" disabled={titleBusy} onClick={()=>setEditingTitle(false)}>Cancelar</button>{titleError&&<p role="alert">{titleError}</p>}</>:<button type="button" className="text-button" onClick={()=>{setTitleDraft(order.subject);setTitleError('');setEditingTitle(true)}}>Editar título de solicitud</button>}</div>}
               <p>Etapa: <strong>{order.stage_label}</strong></p>
-              {order.confirmed_at && <p>Confirmada: {date(order.confirmed_at)}</p>}
+              {order.confirmed_at && <p>Confirmada: {formatDateTime(order.confirmed_at)}</p>}
               <ul className="scanner-products">{order.items.map((item, index) => <li key={index}>{item.product}: {item.quantity} {item.unit}</li>)}</ul>
             </>}
             {outcome.pending_orders?.length > 0 && <div className="scanner-missing"><strong>Órdenes que faltan para liberar el grupo</strong><ul>{outcome.pending_orders.map((missing) => <li key={missing.production_id}><strong>{missing.order_number}</strong> · {missing.stage_label} · {missing.reason}</li>)}</ul></div>}

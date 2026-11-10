@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 from .password_policy import PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH
+from .cai import LEGACY_CAI_PRODUCT, NEW_PRODUCTS, uses_print_form
 
 Money = Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
 Quantity = Annotated[Decimal, Field(gt=0, max_digits=14, decimal_places=3)]
@@ -23,7 +24,7 @@ PREVIOUS_STAGES = {
     'WORKSHOP': {'NEW', 'APPROVAL', 'PRINTING'},
     'READY': {'NEW', 'APPROVAL', 'PRINTING', 'WORKSHOP'},
 }
-Product = Literal['Tarjetas de presentación', 'Talonarios y facturas', 'Talonarios de factura CAI', 'Volantes y flyers', 'Libretas y cuadernos', 'Banners y lonas', 'Otros trabajos']
+Product = str
 
 
 class Input(BaseModel):
@@ -98,7 +99,7 @@ class CaseInput(Input):
     description: str = Field(default='', max_length=20000)
     kind: Literal['Cotización', 'Solicitud', 'Reclamo']
     priority: Literal['Baja', 'Normal', 'Alta', 'Urgente'] = 'Normal'
-    creation_context: Literal['pool', 'personal']
+    creation_context: Literal['pool', 'personal'] = 'pool'
 
 
 class Mutation(Input):
@@ -201,18 +202,25 @@ class ItemInput(Input):
     unit_price: Money = Decimal('0')
     specs: Specs = Field(default_factory=Specs)
 
+    @field_validator('product')
+    @classmethod
+    def known_product(cls, value):
+        if value not in NEW_PRODUCTS and value != LEGACY_CAI_PRODUCT:
+            raise ValueError('Selecciona un producto del catálogo')
+        return value
+
     @model_validator(mode='after')
     def cai_contract(self):
         cai_fields = ('cai_format', 'games_per_pad', 'paper_type', 'additional_copies', 'cai_binding')
-        if self.product == 'Talonarios de factura CAI':
+        if uses_print_form(self.product):
             if self.unit != 'talonarios':
-                raise ValueError('La unidad comercial de Talonarios de factura CAI debe ser talonarios')
+                raise ValueError('La unidad comercial de este formulario debe ser talonarios')
             if self.quantity != self.quantity.to_integral_value():
                 raise ValueError('La cantidad de talonarios debe ser un entero positivo')
             if any(getattr(self.specs, name) is None for name in cai_fields):
-                raise ValueError('Completa formato, juegos, papel y copias del talonario CAI')
+                raise ValueError('Completa formato, juegos, papel, copias y encuadernación')
         elif any(getattr(self.specs, name) is not None for name in cai_fields):
-            raise ValueError('Las especificaciones CAI solo se permiten para Talonarios de factura CAI')
+            raise ValueError('Estas especificaciones solo se permiten para productos con formulario de talonarios')
         return self
 
 
@@ -235,7 +243,7 @@ class Conversion(Mutation):
     currency: Literal['HNL'] = 'HNL'
     payment_terms: Literal['Contado', 'Crédito'] = 'Contado'
     advance_required: Money = Decimal('0')
-    payment_due_date: date
+    payment_due_date: date | None = None
     delivery_method: str = Field(min_length=1, max_length=120)
     instructions: str = Field(default='', max_length=10000)
     contact_id: int | None = Field(default=None, ge=1)
@@ -334,6 +342,9 @@ class CompleteDeliveryInput(Mutation):
     method: Literal['Retiro en local', 'Entrega (delivery)']
     receiver: str = Field(default='', max_length=180)
     evidence: str = Field(default='', max_length=3000)
+    payment_amount: Annotated[Decimal, Field(gt=0, max_digits=14, decimal_places=2)] | None = None
+    payment_reference: str | None = Field(default=None, min_length=1, max_length=240)
+    balance_reason: str | None = Field(default=None, min_length=3, max_length=300)
 
 
 class PaymentInput(Mutation):

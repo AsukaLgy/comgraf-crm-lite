@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Plus, Printer, UserRound, Pencil } from 'lucide-react'
-import { date } from './api'
+import { formatDateTime } from './api'
 import { Badge, ErrorBox } from './components'
 
 export default function CaseAttention({
@@ -40,7 +40,7 @@ export default function CaseAttention({
             <span>· Responsable: {person(record.owner_id)}</span>
             <span>· {record.kind === 'Solicitud' ? 'Orden de producción' : record.kind}</span>
             {record.channel && <span>· {record.channel}</span>}
-            <span>· {date(record.created_at)}</span>
+            <span>· {formatDateTime(record.created_at)}</span>
           </div>
         </div>
         <div className="actions">
@@ -89,7 +89,7 @@ export default function CaseAttention({
       <div className="status-strip">
         {record.lifecycle === 'Completado' && (
           <span>
-            Completado {date(record.completed_at)} · {person(record.completed_by_id)}
+            Completado {formatDateTime(record.completed_at)} · {person(record.completed_by_id)}
           </span>
         )}
         <Badge>{record.status}</Badge>

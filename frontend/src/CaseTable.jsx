@@ -1,7 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { api, can, date, dateHonduras, uid } from './api'
+import { api, can, date, formatDateTime, dateHonduras, uid } from './api'
 import { Badge, Empty, ErrorBox } from './components'
 
 // Shared read-only row projection for operational pools and customer history.
@@ -42,7 +42,7 @@ export default function CaseTable({ items, remember, user, showCreated = false, 
                 </Link>
                 {record.lifecycle === 'Completado' && (
                   <small>
-                    <Badge tone="teal">Completado</Badge> {date(record.completed_at)}
+                    <Badge tone="teal">Completado</Badge> {formatDateTime(record.completed_at)}
                   </small>
                 )}
                 {record.requires_action && <span className="action-dot" title="Requiere acción" />}

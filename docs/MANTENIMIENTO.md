@@ -18,10 +18,10 @@ Para despliegue, respaldo y recuperación usa [Operación](OPERACION.md). Esta g
 | Atención y encabezado | `frontend/src/CaseAttention.jsx` | Abrir/cerrar atención, propietario e información de acción pendiente. |
 | Actividad | `frontend/src/CaseActivity.jsx` | Bitácora, notas e historial de comunicaciones en solo lectura. Las notas no abren atención. |
 | Etapas | `frontend/src/ProductionStages.jsx` | Barra de cinco etapas, clasificación histórica, programación, bloqueos y retrocesos. |
-| Entrega y finanzas | `frontend/src/DeliveryFinance.jsx` | Registro parcial/completo y abono transaccional opcional, saldos y permisos financieros. |
+| Entrega y finanzas | `frontend/src/DeliveryFinance.jsx`, `CompleteDeliveryDialog.jsx` | Entrega completa por OP, cobro opcional en una transacción, saldos y permisos financieros. |
 | Anulación comercial | `frontend/src/CasePage.jsx`, `DeliveryFinance.jsx`; `backend/app/services.py`, `repository.py` | Detener producción conservando entregas y movimientos; ajustar cargo final, resolver devoluciones o dejar revisión financiera pendiente. |
 | Ficha imprimible | `frontend/src/CasePrintSheet.jsx`, `PrintDocument.jsx` | Plantilla única y documento aislado con tamaños Carta/media carta. |
-| Productos y conversión | `frontend/src/ProductForm.jsx` | Productos, especificaciones, cotizaciones y ampliación del mismo caso a producción. |
+| Productos y conversión | `frontend/src/ProductForm.jsx`, `domain.js`; `backend/app/cai.py` | Productos, especificaciones, cotizaciones y ampliación del mismo caso a producción. |
 | Historial de correo | `frontend/src/CaseActivity.jsx`; `backend/app/routers/history.py`, `repository.py` | Lectura de mensajes y adjuntos vinculados, bajo los permisos de la solicitud. |
 | Notas | `frontend/src/Composer.jsx` | Borrador de Nota y plantillas; describe llamadas o visitas sin crear comunicaciones. |
 | Endpoints | `backend/app/routers/` | HTTP, permisos de entrada, dependencias de sesión y traducción a servicios. |
@@ -37,11 +37,13 @@ Para despliegue, respaldo y recuperación usa [Operación](OPERACION.md). Esta g
 ## Invariantes de operación
 
 - Un caso conserva su ID durante toda su vida; producción se añade al caso, no crea otro expediente.
-- El responsable operativo único es `Case.owner_id`. `Case.collection_owner_id` y `Production.owner_id` son columnas históricas y solo se conservan para compatibilidad y visibilidad heredada.
+- Solo el alta desde Mis solicitudes asigna `Case.owner_id` al usuario autenticado. Producción, Pool, Mi día y perfil de cliente crean sin asignar. Añadir una OP no cambia el propietario. El responsable operativo único es `Case.owner_id`. `Case.collection_owner_id` y `Production.owner_id` son columnas históricas y solo se conservan para compatibilidad y visibilidad heredada.
 - `Production.stage` usa NEW, APPROVAL, PRINTING, WORKSHOP, READY. Las transiciones permitidas están expresadas como mapas de códigos, no por posiciones de una lista. `NULL` junto con `classification_required` significa etapa heredada ambigua por clasificar; no es una sexta etapa.
-- `Delivery` calcula cantidades acumuladas; el estado Completa solo procede cuando cada producto está entregado. La entrega completa detiene tiempo productivo sin borrar tiempos ni movimientos.
+- `Delivery` calcula cantidades acumuladas; el estado Completa solo procede cuando cada producto está entregado. Entrega más cobro usa una sola transacción con bloqueo, versión e idempotencia. El importe se valida contra el saldo decimal de esa OP; un cobro requiere permiso `finance` incluso para quien puede entregar. Un saldo restante contado exige motivo; crédito vigente con vencimiento usa «Crédito acordado». Entregar o pagar no completa la solicitud.
 - Atención es solo `Abierto`/`Cerrado`; no usar el cierre como condición general de permiso o bloqueo. El predicado de acción inmediata es único en repositorio y servicio de recuperación.
 - El propietario único es `Case.owner_id`. Columnas de responsable por área y datos de subetapa permanecen como históricos, sin reglas activas.
+- El catálogo nuevo vive en `backend/app/cai.py` y se refleja en `frontend/src/domain.js`. La etiqueta CAI anterior se acepta para lectura; la conversión a nueva OP la mapea a Facturas (CAI) sin reescribir snapshots. El formulario compartido no activa reglas fiscales para Talonarios y facturas.
+- `formatDate` presenta fechas de calendario sin zona UTC implícita; `formatDateTime` conserva horas de actividad y auditoría. Los instantes de entrega siguen almacenados como timestamp.
 - Los campos `Production.authorized_at`, `approval_evidence`, `approved_snapshot` y `art_version` conservan datos del flujo anterior. No deben volver a imponer una autorización. `approved_snapshot` sigue siendo una fuente de impresión histórica si no existe `specs_snapshot`.
 - Todas las operaciones financieras nuevas son HNL. Los registros USD históricos no se convierten ni se mezclan con HNL.
 - `Case.version` y la clave idempotente protegen operaciones frente a doble envío y concurrencia. No quitar ambos controles de una mutación.

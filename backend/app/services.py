@@ -10,7 +10,7 @@ from .models import Case, Client, Contact, Delivery, Event, Idempotency, Item, L
 from .security import can, require, require_binding_scanner
 from .repository import get_case, today, row, delivery_status, local_day, quantity_text, balance, attention_predicates, case_completion_blockers
 from . import schemas as s
-from .cai import CAI_BINDINGS, cai_summary
+from .cai import CAI_BINDINGS, cai_summary, is_cai_product, uses_print_form, new_order_product
 
 NEXT_STAGE = s.NEXT_STAGE
 PREVIOUS_STAGES = s.PREVIOUS_STAGES
@@ -167,8 +167,6 @@ def update_case(db, user, case_id, data):
     if data.priority is not None: case.priority = data.priority
     if data.next_action is not None: case.next_action = data.next_action
     event(db, case, user, f'Atención: {old} → {data.status}', data={'action': 'attention_status', 'from': old, 'to': data.status, 'origin': 'manual'})
-    if data.status == 'Cerrado':
-        complete_resolved_production(db, case, user, 'attention_resolved')
     return case
 
 
@@ -230,6 +228,9 @@ def add_task(db, user, case_id, data):
         outstanding = balance(db, case.id, production.id)['balance']
         if outstanding is None or Decimal(outstanding) <= 0:
             fail('La orden no tiene un saldo pendiente verificable para programar un seguimiento de cobro')
+        if db.scalar(select(Task.id).where(Task.case_id == case.id, Task.production_id == production.id,
+                                           Task.purpose == 'COLLECTION', Task.done_at.is_(None)).limit(1)):
+            fail('La OP ya tiene un seguimiento de cobro pendiente', 409)
     db.add(Task(case_id=case.id, production_id=production.id if production else None,
                 owner_id=data.owner_id, purpose=data.purpose, title=data.title, due_at=data.due_at))
     if data.purpose == 'ATTENTION': case.next_action = data.title
@@ -276,7 +277,6 @@ def complete_task(db, user, case_id, task_id, data):
         next_task = Task(case_id=case.id, production_id=production.id, owner_id=case.owner_id, category='PICKUP', title='Contactar al cliente por trabajo listo para recoger', due_at=due_at)
         db.add(next_task)
         event(db, case, user, f'Siguiente seguimiento de recogida programado para OP-{production.id:05d}', data={'action': 'pickup_followup_created', 'production_id': production.id, 'due_at': due_at.isoformat() + 'Z', 'owner_id': case.owner_id})
-    complete_resolved_production(db, case, user, 'followup_resolved')
     return case
 
 
@@ -363,7 +363,7 @@ def convert(db, user, case_id, data, *, permission='attention'):
         if quote.currency != CURRENCY_HNL: fail('Esta cotización histórica está en USD. Revísala y crea una nueva versión en HNL antes de generar producción.', 409)
         quoted_items = quote.items or []
         needs_binding = any(
-            item.get('product') == 'Talonarios de factura CAI'
+            is_cai_product(item.get('product'))
             and not (item.get('specs') or {}).get('cai_binding')
             for item in quoted_items
         )
@@ -395,7 +395,7 @@ def convert(db, user, case_id, data, *, permission='attention'):
                 chosen_binding = chosen_specs.pop('cai_binding', None)
                 if clean(source_specs) != clean(chosen_specs):
                     fail('Al completar una cotización histórica solo puedes indicar la encuadernación pendiente')
-                if original.get('product') == 'Talonarios de factura CAI':
+                if is_cai_product(original.get('product')):
                     if source_binding:
                         if source_binding != chosen_binding:
                             fail('La encuadernación cotizada no puede cambiar al generar la orden')
@@ -412,6 +412,8 @@ def convert(db, user, case_id, data, *, permission='attention'):
     else:
         quote = None
     if not items: fail('Agrega al menos un producto')
+    # La cotización conserva su denominación histórica; la nueva OP usa el catálogo vigente.
+    items = [{**item, 'product': new_order_product(item['product'])} for item in items]
     contact_id = data.contact_id if 'contact_id' in data.model_fields_set else case.contact_id
     contact = db.get(Contact, contact_id) if contact_id else None
     if contact_id and (not contact or contact.client_id != case.client_id):
@@ -443,7 +445,7 @@ def convert(db, user, case_id, data, *, permission='attention'):
     order_items = [Item(case_id=case.id, production_id=production.id, **item) for item in items]
     db.add_all(order_items)
     db.flush()
-    production.specs_snapshot = {'items': [{**row(item, ('substage',)), **({'cai_summary': cai_summary({'product': item.product, 'quantity': item.quantity, 'specs': item.specs})} if item.product == 'Talonarios de factura CAI' else {})} for item in order_items]}
+    production.specs_snapshot = {'items': [{**row(item, ('substage',)), **({'cai_summary': cai_summary({'product': item.product, 'quantity': item.quantity, 'specs': item.specs})} if uses_print_form(item.product) else {})} for item in order_items]}
     db.add(Ledger(case_id=case.id, production_id=production.id, kind='Obligación', amount=price, currency=CURRENCY_HNL,
         due_date=data.payment_due_date, reference='Orden de producción', actor_id=user.id))
     case.mode = 'Producción'
@@ -910,7 +912,6 @@ def resolve_cancellation_request(db, user, case_id, data):
     if delivery_status(db, case.id, production.id) == 'Completa':
         fail('La orden está completamente entregada; registra una devolución o reclamo por separado', 409)
     resolve_cancellation(db, user, case, production, data)
-    complete_resolved_production(db, case, user, 'cancellation_resolved')
     return case
 
 
@@ -970,7 +971,6 @@ def refund(db, user, case_id, data):
         reference=data.reference, reason='Devolución realizada y confirmada por el usuario', actor_id=user.id))
     event(db, case, user, f'Devolución registrada: {data.amount} {production.currency}. {data.reference}',
         data={'action': 'refund', 'amount': str(data.amount), 'reference': data.reference, 'actor_id': user.id})
-    complete_resolved_production(db, case, user, 'refund_recorded')
     return case
 
 
@@ -1005,7 +1005,6 @@ def deliver(db, user, case_id, data):
         for task in pickup_tasks: task.done_at = now()
         if pickup_tasks:
             event(db, case, user, 'Seguimiento de recogida resuelto automáticamente por entrega completa', data={'action': 'pickup_followup_resolved', 'task_ids': [task.id for task in pickup_tasks], 'origin': 'automatic'})
-    complete_resolved_production(db, case, user, 'delivery_recorded')
     return case
 
 
@@ -1013,12 +1012,34 @@ def deliver_complete(db, user, case_id, data):
     case, changed = mutation(db, user, case_id, data, 'delivery_complete', 'production')
     if not changed: return case
     production = get_production(db, case, data.production_id)
+    if data.payment_amount is not None:
+        require(db, user, 'finance')
+        if not data.payment_reference:
+            fail('Indica la referencia del cobro')
+        if production.currency != CURRENCY_HNL:
+            fail('Esta orden histórica no admite pagos nuevos en HNL', 409)
+    elif data.payment_reference:
+        fail('Indica el importe del cobro')
     if production.cancelled_at or production.cancellation_review_pending:
         fail('La orden está anulada o pendiente de revisión y no puede entregarse', 409)
     if production.classification_required or production.stage != 'READY' or production.blocked_since:
         fail('La orden debe estar habilitada, clasificada, lista para entregar y sin bloqueos')
     if delivery_status(db, case.id, production.id) == 'Completa':
         fail('Esta orden ya tiene una entrega completa registrada', 409)
+    current = balance(db, case.id, production.id)['balance']
+    if current is None:
+        fail('El saldo de la orden requiere revisión de moneda', 409)
+    pending = Decimal(current)
+    if pending <= 0 and data.payment_amount is not None:
+        fail('La orden ya está pagada; no registres otro cobro', 409)
+    if data.payment_amount is not None and data.payment_amount > pending:
+        fail('El cobro supera el saldo actual de la OP', 409)
+    remaining_balance = pending - (data.payment_amount or Decimal('0'))
+    agreed_credit = (production.payment_terms == 'Crédito' and production.payment_due_date
+                     and production.payment_due_date >= today())
+    balance_reason = 'Crédito acordado' if remaining_balance > 0 and agreed_credit else data.balance_reason
+    if remaining_balance > 0 and not balance_reason:
+        fail('Indica un motivo breve para entregar con saldo pendiente')
     items = db.scalars(select(Item).where(Item.production_id == production.id).order_by(Item.id).with_for_update()).all()
     if not items: fail('La orden no tiene productos entregables', 409)
     delivered_at = now()
@@ -1029,17 +1050,30 @@ def deliver_complete(db, user, case_id, data):
         if remaining:
             db.add(Delivery(case_id=case.id, item_id=item.id, quantity=remaining, delivered_at=delivered_at,
                             receiver=data.receiver, method=data.method, evidence=data.evidence or f'Entrega completa OP-{production.id:05d}', actor_id=user.id))
+    if data.payment_amount is not None:
+        db.add(Ledger(case_id=case.id, production_id=production.id, kind='Abono', amount=-data.payment_amount,
+                      currency=production.currency, reference=data.payment_reference, actor_id=user.id))
+        db.flush()
+        resolve_paid_collection_followups(db, case, production, user)
     event(db, case, user, f'Entrega completa de OP-{production.id:05d} · {data.method}',
           data={'action': 'delivery_completed', 'production_id': production.id, 'stage': production.stage, 'method': data.method,
                 'seconds': max(0, (delivered_at - production.stage_started_at).total_seconds()),
                 'on_time_original': bool(production.original_committed_date and local_day(delivered_at) <= production.original_committed_date)})
+    if data.payment_amount is not None or remaining_balance > 0:
+        event(db, case, user,
+              f'Situación de cobro OP-{production.id:05d}: '
+              + (f'Abono {data.payment_amount} {production.currency}. {data.payment_reference}. ' if data.payment_amount is not None else '')
+              + (f'Saldo {remaining_balance} {production.currency}. {balance_reason}' if remaining_balance > 0 else 'Pagado.'),
+              data={'financial': True, 'action': 'delivery_collection', 'production_id': production.id,
+                    'payment_amount': str(data.payment_amount) if data.payment_amount is not None else None,
+                    'balance_reason': balance_reason if remaining_balance > 0 else None})
     pickup_tasks = db.scalars(select(Task).where(Task.case_id == case.id, Task.production_id == production.id,
                                                    Task.category == 'PICKUP', Task.done_at.is_(None))).all()
     for task in pickup_tasks: task.done_at = delivered_at
     if pickup_tasks:
         event(db, case, user, 'Seguimiento de recogida resuelto por entrega completa',
               data={'action': 'pickup_followup_resolved', 'task_ids': [task.id for task in pickup_tasks], 'origin': 'automatic'})
-    # Entregar no registra pagos ni completa la solicitud. La atención se cierra aparte.
+    # La entrega y su cobro comparten la transacción del request; atención se cierra aparte.
     return case
 
 
@@ -1052,7 +1086,6 @@ def pay(db, user, case_id, data):
     db.flush()
     resolve_paid_collection_followups(db, case, production, user)
     event(db, case, user, f'{data.kind} OP-{production.id:05d}: {data.amount} {production.currency}. {data.reference}', data={'financial': True, 'action': 'payment', 'production_id': production.id})
-    complete_resolved_production(db, case, user, 'payment_recorded')
     return case
 
 
@@ -1066,7 +1099,6 @@ def adjust(db, user, case_id, data):
     db.flush()
     resolve_paid_collection_followups(db, case, production, user)
     event(db, case, user, f'Ajuste OP-{production.id:05d}: {data.amount} {production.currency}. {data.reason}', data={'financial': True, 'production_id': production.id})
-    complete_resolved_production(db, case, user, 'financial_adjustment')
     return case
 
 
@@ -1099,5 +1131,4 @@ def reverse_payment(db, user, case_id, entry_id, data):
     if entry.production_id != production.id: fail('El pago pertenece a otra orden', 409)
     db.add(Ledger(case_id=case.id, production_id=production.id, kind='Reversión de pago', amount=-entry.amount, currency=entry.currency, due_date=production.payment_due_date, reference=f'Reversión #{entry.id}', reason=data.reason, reverses_id=entry.id, actor_id=user.id))
     event(db, case, user, f'Pago #{entry.id} de OP-{production.id:05d} revertido: {data.reason}', data={'financial': True, 'production_id': production.id})
-    complete_resolved_production(db, case, user, 'payment_reversed')
     return case

@@ -21,7 +21,7 @@ Cancelación es un evento excepcional con motivo y fecha. No elimina obligacione
 
 Las bandejas operativas tienen predicados compartidos entre consulta y contador: Sin asignar = activa y sin propietario; Mis solicitudes = activa y propiedad del usuario; Requieren acción = activa, visible y sin propietario, con atención abierta, mensaje entrante pendiente o seguimiento vencido; Requieren mi acción agrega propiedad del usuario. Trabajo futuro, saldo pendiente o producción activa no disparan contacto por sí solos. La carga de trabajo conserva sus criterios operativos separados.
 
-Una producción se completa automáticamente al registrar la última entrega total solo si el libro de movimientos permite verificar saldo cero, hay obligación de la moneda de la orden y no quedan tareas, mensajes, bloqueos, cotizaciones pendientes ni resolución económica. Se vuelve a evaluar tras cada operación que puede resolver uno de esos pendientes. Consultas y cotizaciones sin producción usan finalización manual. `completions-preview` y `regularize-completions` permiten revisar y, con confirmación explícita, regularizar filas históricas equivalentes; la regularización agrega fecha actual y evento auditable sin rehacer movimientos ni cantidades.
+La solicitud se completa solo mediante la acción manual «Completar caso», cuando no quedan trabajos ni gestiones pendientes. Entregar, cobrar, cerrar atención o resolver tareas no la archiva. `completions-preview` y `regularize-completions` conservan su operación explícita para regularización histórica auditada.
 
 Cada transición de atención nueva registra usuario, hora, estado anterior/nuevo y origen. La revisión 003 normalizó en lote estados activos anteriores; como esa revisión ya fue aplicada antes de esta corrección, el valor previo de esas filas no se puede recuperar del historial local. No se supone un estado original: las transiciones posteriores sí quedan trazadas.
 
@@ -31,6 +31,10 @@ Operaciones críticas bloquean el caso con `SELECT ... FOR UPDATE`, comprueban v
 
 Se usa aislamiento READ COMMITTED para que la segunda transacción vea el resultado confirmado de la primera. Errores 409 conservan el formulario, actualizan el expediente y permiten revisar antes de guardar. No hay actualizaciones financieras destructivas: un pago se corrige mediante una reversión enlazada, única y con motivo.
 
+## Alta y asignación
+
+Solo «Mis solicitudes» y sus subpestañas personales envían `creation_context=personal`; el servidor asigna entonces `owner_id` al usuario autenticado y aplica capacidad. Pool general, Mi día, perfil del cliente y otros accesos crean sin responsable. La ruta de Producción crea solicitud y OP en una transacción, sin propietario y sin consumir capacidad personal; el autor queda en eventos y `created_by_id`. Agregar una OP a una solicitud existente conserva su responsable.
+
 ## Cotizaciones y producción
 
 Las cotizaciones guardan versiones inmutables en HNL y registran la decisión de cada versión. Una cotización histórica en USD permanece en USD y debe revisarse en una nueva versión HNL antes de convertirla; nunca se calcula una tasa implícita.
@@ -39,11 +43,15 @@ Cada orden contiene uno o varios productos y una etapa/agenda propias. Generar u
 
 El calendario distingue eventos (entrega comprometida, inicio programado y seguimiento) de la etapa actual de una orden. Las OP entregadas por completo o anuladas salen de eventos pendientes. La bandeja de producción y Listos para entregar cuentan y muestran órdenes; los filtros generales de etapa sobre solicitudes usan existencia de una OP coincidente y no duplican el expediente. La ficha imprimible y cada evento de producción llevan la OP seleccionada.
 
+## Catálogo e impresión
+
+`backend/app/cai.py` define productos nuevos, familia fiscal CAI y productos del formulario compartido; `frontend/src/domain.js` refleja las opciones. Recibos por honorarios (CAI), Facturas (CAI), Otros (CAI) y Talonarios y facturas usan las mismas especificaciones de talonario. El producto genérico no se interpreta como documento fiscal. «Talonarios de factura CAI» se acepta para lectura histórica; una OP nueva derivada de ese nombre se guarda como Facturas (CAI), sin modificar la cotización ni su snapshot. La hoja fiscal muestra el nombre real, QR y especificaciones sin precios.
+
 ## Dinero y tiempo
 
 Importes DECIMAL(14,2), cantidades DECIMAL(14,3); dimensiones decimales serializadas como cadenas en JSON validado. Total = suma de cantidad × precio unitario, redondeo decimal HALF_UP al total. Las operaciones nuevas usan exclusivamente HNL, incluidas cotizaciones, producción y movimientos financieros. Los registros históricos USD conservan su moneda y no admiten nuevos pagos o ajustes HNL; los pagos históricos no se convierten ni se alteran. No hay conversión de divisas ni mezcla de monedas en KPI.
 
-Saldo = suma de movimientos con signo: obligación y reversión de pago positivos; anticipos/abonos negativos; ajustes firmados. Saldo vencido: cargos cuyo vencimiento es anterior al día local menos créditos disponibles, imputados primero a deuda vencida, limitado entre cero y saldo. Una reversión mantiene el vencimiento original. No hay interés, impuestos fiscales ni asientos contables.
+Saldo = suma de movimientos con signo: obligación y reversión de pago positivos; anticipos/abonos negativos; ajustes firmados. Saldo vencido: cargos cuyo vencimiento es anterior al día local menos créditos disponibles, imputados primero a deuda vencida, limitado entre cero y saldo. Una reversión mantiene el vencimiento original. La revisión 018 permite vencimiento nulo cuando no se acordó fecha; no se presume una fecha. No hay interés, impuestos fiscales ni asientos contables.
 
 Instantes UTC en MySQL; presentación y límites de día en `APP_TIMEZONE` (America/Tegucigalpa). Fechas solicitadas, compromisos y vencimientos son fechas de calendario. Las revisiones de programación guardan fecha anterior y nueva, usuario y hora. Se conserva el compromiso original para medir puntualidad.
 
@@ -68,7 +76,7 @@ Las tablas `mail_accounts`, `mail_messages`, `mail_attachments` y los borradores
 
 ## Indicadores
 
-La pantalla explica sus denominadores: conversión de solicitudes a órdenes de producción sobre todas las solicitudes; aceptación sobre versiones; cotizaciones convertidas sobre versiones aceptadas; puntualidad sobre entregas completas contra compromiso original. Tiempo de primera respuesta cuenta primera interacción manual saliente o visita, no nota interna ni asignación. Tiempo por etapa incluye permanencia y bloqueos; tiempo bloqueado también se reporta aparte. El indicador Reclamos conserva el conteo de retrocesos de producción registrados con motivo.
+El panel separa situación actual (solicitudes sin asignar o con acción, OP por etapa, atrasadas, listas, retiro y cobranza) del cumplimiento histórico de los últimos 30 días. Cada conteo operativo usa los predicados de sus bandejas. Puntualidad = OP no anuladas entregadas dentro del compromiso original / OP entregadas del período con fecha original; las que carecen de fecha se informan aparte. Los cambios manuales de etapa no se convierten en horas de trabajo. Los permisos comerciales limitan indicadores de cobro; no se suman monedas.
 
 ## Bandejas y vencimientos
 

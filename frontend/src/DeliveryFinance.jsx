@@ -1,9 +1,10 @@
-import { can, date, localDate, money, quantity } from './api'
+import { can, date, formatDateTime, localDate, money, quantity } from './api'
 import { Badge, Empty, Panel } from './components'
 import { HNL_CURRENCY } from './domain'
 
 export default function DeliveryFinance({ record, user, finance, onOperation, onDeliver, canDeliver = false }) {
   const production = record.production
+  const financial = finance || can(user, 'attention')
   return (
     <Panel
       title="Entregas y cobros"
@@ -102,7 +103,7 @@ export default function DeliveryFinance({ record, user, finance, onOperation, on
         </div>
       }
     >
-      {finance ? (
+      {financial ? (
         <div className="finance-summary">
           <div>
             <small>Precio de la orden</small>
@@ -136,7 +137,7 @@ export default function DeliveryFinance({ record, user, finance, onOperation, on
       ) : (
         <p className="notice">Importes restringidos a los roles financieros y de atención.</p>
       )}
-      {finance && production.currency !== HNL_CURRENCY && (
+      {financial && production.currency !== HNL_CURRENCY && (
         <p className="notice">
           Orden histórica en USD. Se conserva su moneda original y no se admiten nuevos pagos HNL.
         </p>
@@ -192,7 +193,7 @@ export default function DeliveryFinance({ record, user, finance, onOperation, on
             <tbody>
               {record.ledger.map((entry) => (
                 <tr key={entry.id}>
-                  <td>{date(entry.created_at)}</td>
+                  <td>{formatDateTime(entry.created_at)}</td>
                   <td>{entry.kind}</td>
                   <td>{money(entry.amount, production.currency)}</td>
                   <td>{date(entry.due_date)}</td>

@@ -13,7 +13,7 @@ const CASE_KINDS = [
   'Reclamo',
 ]
 
-export default function NewCase({ onClose, clientId, client: initialClient, user, creationContext = 'personal' }) {
+export default function NewCase({ onClose, clientId, client: initialClient, user, creationContext = 'pool' }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const prefill = initialClient || null

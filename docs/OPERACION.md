@@ -16,6 +16,16 @@ Esta es la guía vigente para desarrollo, actualización y recuperación. El ser
 
 React llama a `/api` en el mismo origen; FastAPI consulta MySQL. La imagen Docker compila los recursos frontend y los sirve junto a la API. Para cambiar una operación, modifica contrato Pydantic, regla de servicio, endpoint y formulario, y añade pruebas de autorización/concurrencia. Las etiquetas visibles de etapa están en `frontend/src/domain.js` y `backend/app/schemas.py`; los códigos internos permanecen estables. Las migraciones se crean en `backend/` con `alembic revision -m "descripción"`, se revisan manualmente, se prueban con `alembic upgrade head` y `alembic check` **solo en una base aislada** antes de publicarse. El arranque `python -m app.start` aplica revisiones pendientes.
 
+## Entrega, cobro y asignación
+
+En «Listos para entregar», abre la OP y selecciona «Registrar entrega de OP completa». El resumen de cobro corresponde a la OP elegida: total, pagos recibidos, saldo, condición y vencimiento. Contado propone cobrar el saldo; se puede editar para pago parcial. Si queda saldo contado, escribe un motivo breve. Crédito vigente con vencimiento usa «Crédito acordado» automáticamente; crédito vencido exige explicación. Una OP pagada se entrega sin otro cobro. El botón final distingue cobro y saldo pendiente. La fecha y hora exactas, el autor y la OP quedan registrados. El cobro exige permiso financiero; Producción puede entregar sin cobro con motivo. Los anticipos y abonos independientes siguen disponibles antes y después de la entrega. La solicitud se completa mediante la acción manual correspondiente.
+
+Solo el alta desde «Mis solicitudes» y sus subpestañas personales asigna al usuario. Producción, Pool general, Mi día y perfil del cliente crean sin asignar; Producción crea solicitud y OP juntas. Agregar otra OP no cambia el responsable de la solicitud. Una solicitud sin asignar puede verse en Pool mientras su OP se ve en Producción: es el mismo trabajo en dos bandejas.
+
+El catálogo nuevo ofrece Recibos por honorarios (CAI), Facturas (CAI), Otros (CAI) y Talonarios y facturas con especificaciones compartidas. El nombre CAI antiguo permanece legible en órdenes y cotizaciones históricas; una OP nueva derivada de él usa Facturas (CAI). Las fechas de entrega y vencimiento sin horario se presentan solo como fecha local de Tegucigalpa; actividad y auditoría conservan hora.
+
+El panel de Indicadores muestra situación actual por solicitud u OP y cumplimiento de los últimos 30 días. Los enlaces abren bandejas filtradas por el mismo criterio. Los importes de cobranza son referencias operativas bajo permiso comercial; no son ingresos contables. La migración `018_optional_payment_due` permite dejar sin fecha un vencimiento no acordado; no modifica fechas ni snapshots históricos. Antes de aplicar una reversión de esquema, resuelve explícitamente las OP con vencimiento nulo.
+
 ## Desarrollo reproducible
 
 Requisitos: Python 3.14, Node 24, MySQL 8.4 y Docker Compose v2 si se usa contenedor. Node 18 permitió una compilación local, pero Vite y React Router declaran Node 20.19+; usa Node 24 para resultados reproducibles. No existe usuario ni contraseña predeterminados.

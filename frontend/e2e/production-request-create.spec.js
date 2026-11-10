@@ -4,7 +4,7 @@ import path from 'node:path'
 
 const credentials = JSON.parse(fs.readFileSync(path.resolve('../.runtime/e2e.json'), 'utf8'))
 
-test('Producción crea solicitud y OP juntas y asignadas al usuario autenticado', async ({ page }) => {
+test('Producción crea solicitud y OP juntas sin responsable', async ({ page }) => {
   const runtimeErrors = []
   const clientName = 'E2E · Alta atómica ' + Date.now()
   await page.goto('/')
@@ -18,7 +18,7 @@ test('Producción crea solicitud y OP juntas y asignadas al usuario autenticado'
   await page.goto('/inbox/production')
   await page.getByRole('button', { name: 'Generar orden de producción' }).click()
   const dialog = page.getByRole('dialog')
-  const clientInput = dialog.getByLabel('Cliente', { exact: true })
+  const clientInput = dialog.getByRole('combobox', { name: /Cliente/ })
   await clientInput.fill(clientName)
   await expect(dialog.getByRole('button', { name: /Crear cliente/ })).toBeVisible()
   await clientInput.press('Escape')
@@ -26,10 +26,10 @@ test('Producción crea solicitud y OP juntas y asignadas al usuario autenticado'
   await expect(clientInput).toHaveValue(clientName)
   await clientInput.click()
   await dialog.getByRole('button', { name: /Crear cliente/ }).click()
-  await dialog.getByLabel('Empresa (opcional)').fill('Taller de prueba')
+  await dialog.getByLabel('Empresa / razón social').fill('Taller de prueba')
   await dialog.getByRole('button', { name: 'Crear y seleccionar cliente' }).click()
   await expect(dialog.getByRole('listbox')).toHaveCount(0)
-  await expect(dialog.getByText('Se asignará a tu usuario.')).toBeVisible()
+  await expect(dialog.getByText('Se creará sin asignar en Pool general.')).toBeVisible()
   await dialog.getByLabel('Asunto').fill('Alta atómica de prueba')
   await dialog.getByLabel('Cantidad').fill('100')
   await dialog.getByLabel('Precio unitario (HNL)').fill('15')
@@ -44,7 +44,7 @@ test('Producción crea solicitud y OP juntas y asignadas al usuario autenticado'
   const current = await (await page.request.get(new URL(page.url()).pathname.replace('/cases/', '/api/cases/'))).json()
   expect(current.kind).toBe('Solicitud')
   expect(current.mode).toBe('Producción')
-  expect(current.owner_id).toBe(credentials.user_id)
+  expect(current.owner_id).toBeNull()
   expect(current.production.stage).toBe('APPROVAL')
   await expect(page.getByRole('heading', { name: 'Especificaciones de producción' })).toBeVisible()
   expect(runtimeErrors).toEqual([])
