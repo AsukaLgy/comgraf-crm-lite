@@ -1,5 +1,4 @@
 """Development verification on Windows without installing a service. Loopback only."""
-import os
 from pathlib import Path
 import secrets
 import subprocess

@@ -13,6 +13,7 @@ import DeliveryFinance from './DeliveryFinance'
 import ProductionStages from './ProductionStages'
 import { HNL_CURRENCY } from './domain'
 import DeleteDialog from './DeleteDialog'
+import { invalidateCaseViews } from './caseCache'
 const reason = { name: 'reason', label: 'Motivo', type: 'textarea', required: true }
 const sectionParam = {
   Actividad: 'activity',
@@ -203,7 +204,7 @@ export default function CasePage({ user, print = false }) {
       {user.roles.includes('Administrador') && <details className="secondary-actions"><summary>Más acciones</summary><button type="button" className="danger" onClick={() => setModal({type:'delete'})}>Eliminar definitivamente</button></details>}
       <CaseAttention
         record={c}
-        onEditTitle={async title => {await api(`/cases/${c.id}/title`,{method:'PATCH',body:{title,version:c.version}});await qc.invalidateQueries()}}
+        onEditTitle={async title => {await api(`/cases/${c.id}/title`,{method:'PATCH',body:{title,version:c.version}});await invalidateCaseViews(qc,{caseId:c.id,clientId:c.client.id})}}
         person={person}
         canAttend={activeAttention}
         canTake={canTake}
@@ -254,7 +255,7 @@ export default function CasePage({ user, print = false }) {
         <ProductionStages
           record={c}
           isAdmin={user.roles.includes('Administrador')}
-          onAdminStage={async stage=>{const result=await api(`/cases/${c.id}/production/admin-stage`,{method:'POST',body:{production_id:p.id,stage,version:c.version,key:uid()}});qc.setQueryData(['case',id,selectedProductionId],result);await qc.invalidateQueries();return result}}
+          onAdminStage={async stage=>{const result=await api(`/cases/${c.id}/production/admin-stage`,{method:'POST',body:{production_id:p.id,stage,version:c.version,key:uid()}});qc.setQueryData(['case',id,selectedProductionId],result);await invalidateCaseViews(qc,{caseId:c.id,clientId:c.client.id,counts:true});return result}}
           canManage={production && c.lifecycle !== 'Completado'}
           onSelectProduction={selectProduction}
           onConfirmFinished={openFinishConfirmation}

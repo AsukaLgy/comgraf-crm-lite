@@ -175,7 +175,6 @@ def financial_expressions():
     one_currency = and_(production_currency_count <= 1, ledger_currency_count <= 1)
     total = sql_case((one_currency, raw_total), else_=None)
     overdue_charges = func.coalesce(select(func.sum(sql_case((and_(amount > 0, Ledger.due_date < today()), amount), else_=0))).where(Ledger.case_id == Case.id).correlate(Case).scalar_subquery(), 0)
-    credits = func.coalesce(select(func.sum(sql_case((amount < 0, -amount), else_=0))).where(Ledger.case_id == Case.id).correlate(Case).scalar_subquery(), 0)
     cancellation_review = select(Production.case_id).where(Production.case_id == Case.id, Production.cancelled_at.is_not(None), Production.cancellation_review_pending.is_(True)).correlate(Case).exists()
     has_debt, has_credit, has_overdue = financial_status_predicates()
     calculated_overdue = sql_case((has_overdue, overdue_charges), else_=0)
@@ -547,18 +546,37 @@ def orders_list(db, user, filters):
     try: page_size = min(100, max(1, int(filters.get('page_size', 25))))
     except (TypeError, ValueError): page_size = 25
     financial = can(db, user, 'finance') or can(db, user, 'attention')
+    entries = db.execute(query.offset((page - 1) * page_size).limit(page_size)).all()
+    production_ids = [production.id for production, _case, _client in entries]
+    items_by_production = {production_id: [] for production_id in production_ids}
+    delivered_by_item = {}
+    if production_ids:
+        items = db.scalars(select(Item).where(Item.production_id.in_(production_ids)).order_by(Item.production_id, Item.id)).all()
+        for item in items:
+            items_by_production[item.production_id].append(item)
+        if items:
+            delivered_by_item = dict(db.execute(
+                select(Delivery.item_id, func.sum(Delivery.quantity))
+                .where(Delivery.item_id.in_([item.id for item in items]))
+                .group_by(Delivery.item_id)
+            ).all())
     result = []
-    for production, case, client in db.execute(query.offset((page - 1) * page_size).limit(page_size)):
+    for production, case, client in entries:
+        order_items = items_by_production[production.id]
+        delivered = {item.id: delivered_by_item.get(item.id, 0) for item in order_items}
+        if order_items and all(delivered[item.id] >= item.quantity for item in order_items):
+            delivery_state = 'Completa'
+        else:
+            delivery_state = 'Parcial' if any(item.id in delivered_by_item for item in order_items) else 'Pendiente'
         order = row(production)
         order.update({'order_number': f'OP-{production.id:05d}', 'case_id': case.id,
             'case_number': f'CG-{case.id:06d}', 'subject': case.subject, 'client': row(client, ('search_text',)),
             'owner_id': case.owner_id, 'stage_label': STAGE_LABELS.get(production.stage) if production.stage else 'Pendiente de clasificación',
-            'delivery_status': delivery_status(db, case.id, production.id)})
-        order['item_count'] = db.scalar(select(func.count()).select_from(Item).where(Item.production_id == production.id)) or 0
+            'delivery_status': delivery_state})
+        order['item_count'] = len(order_items)
         pending_quantities = []
-        for item in db.scalars(select(Item).where(Item.production_id == production.id).order_by(Item.id)):
-            delivered = db.scalar(select(func.coalesce(func.sum(Delivery.quantity), 0)).where(Delivery.item_id == item.id)) or 0
-            remaining = item.quantity - delivered
+        for item in order_items:
+            remaining = item.quantity - delivered[item.id]
             if remaining > 0: pending_quantities.append({'product': item.product, 'quantity': str(remaining), 'unit': item.unit})
         order['pending_quantities'] = pending_quantities
         if financial:

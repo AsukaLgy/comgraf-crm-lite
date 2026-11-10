@@ -1,6 +1,5 @@
 """Fail closed before Compose can start with missing or unsafe bind mounts."""
 import argparse
-import os
 from pathlib import Path
 import shutil
 import subprocess

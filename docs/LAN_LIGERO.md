@@ -1,4 +1,6 @@
 # Comgraf LAN ligero — perfil experimental
+> **Guía vigente:** [Operación](OPERACION.md) contiene el procedimiento actual de actualización, respaldo y diagnóstico para `/opt/comgraf-beta/lite`. Este documento conserva el contexto de la intervención que describe.
+
 
 Este perfil existe en la rama `experiment/lan-low-resource` y usa el proyecto Compose `comgraf-lan-light`. Mantiene la aplicación completa; crea una base, adjuntos, secretos, registros, certificados y respaldos separados. El Compose normal `compose.yaml`, su base y sus puertos no se modifica al usar los comandos de esta guía. No se copian `.env`, certificados privados, la cuenta Yahoo ni datos reales. El correo queda sin configurar.
 

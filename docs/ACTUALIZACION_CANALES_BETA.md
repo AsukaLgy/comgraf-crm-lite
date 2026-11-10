@@ -1,4 +1,6 @@
 # Pausa de canales en la beta ligera
+> **Guía vigente:** [Operación](OPERACION.md) contiene el procedimiento actual de actualización, respaldo y diagnóstico para `/opt/comgraf-beta/lite`. Este documento conserva el contexto de la intervención que describe.
+
 
 > Documento histórico del commit `9619b4f`. La versión actual retiró la mensajería y no admite su reactivación por configuración. Para actualizar una instalación existente, usa [RETIRADA_MENSAJERIA.md](RETIRADA_MENSAJERIA.md). No apliques los pasos de reactivación de este documento a la versión nueva.
 

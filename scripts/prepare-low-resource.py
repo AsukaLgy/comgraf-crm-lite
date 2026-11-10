@@ -5,7 +5,6 @@ from pathlib import Path
 import secrets
 import shutil
 import subprocess
-import sys
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_RUNTIME = REPO / '.runtime' / 'low-resource'

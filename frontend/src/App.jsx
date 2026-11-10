@@ -20,15 +20,15 @@ import {
 import { api, can, setTimezone, API_CONTRACT_VERSION, PRODUCT_VERSION } from './api'
 import { ErrorBox, Loading, Field } from './components'
 import Inbox from './Inbox'
-import CasePage from './CasePage'
 import Clients from './Clients'
 import { Calendar, Indicators } from './Reports'
 import Settings from './Settings'
 import PartialReleaseApprovals from './PartialReleaseApprovals'
 import Brand from './Brand'
-import PrintDocument from './PrintDocument'
 
 const BindingScanner = lazy(() => import('./BindingScanner'))
+const CasePage = lazy(() => import('./CasePage'))
+const PrintDocument = lazy(() => import('./PrintDocument'))
 
 function Login({ sessionMessage = '' }) {
   const qc = useQueryClient(),
@@ -161,7 +161,7 @@ export default function App() {
   if (user.roles.length === 1 && user.roles[0] === 'Escáner de encuadernación') {
     return <Suspense fallback={<Loading />}><BindingScanner user={user} onLogout={logout} /></Suspense>
   }
-  if (/^\/cases\/\d+\/print$/.test(window.location.pathname)) return <PrintDocument />
+  if (/^\/cases\/\d+\/print$/.test(window.location.pathname)) return <Suspense fallback={<Loading />}><PrintDocument /></Suspense>
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -229,8 +229,8 @@ export default function App() {
             <Route path="/" element={<Inbox key="home" home user={user} />} />
             <Route path="/inbox/:view" element={<InboxRoute user={user} />} />
             <Route path="/search" element={<Inbox key="search" search user={user} />} />
-            <Route path="/cases/:id" element={<CasePage user={user} />} />
-            <Route path="/cases/:id/print" element={<CasePage user={user} print />} />
+            <Route path="/cases/:id" element={<Suspense fallback={<Loading />}><CasePage user={user} /></Suspense>} />
+            <Route path="/cases/:id/print" element={<Suspense fallback={<Loading />}><CasePage user={user} print /></Suspense>} />
             <Route
               path="/clients"
               element={

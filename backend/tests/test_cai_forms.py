@@ -1,4 +1,3 @@
-from decimal import Decimal
 from itertools import product
 import pytest
 from pydantic import ValidationError

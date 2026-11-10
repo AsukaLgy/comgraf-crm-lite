@@ -289,7 +289,6 @@ def test_multiple_orders_keep_products_stages_deliveries_and_calendar_separate(c
     result=scan_order(clients,second_view)
     assert result['result']=='released' and set(result['released_orders'])=={f'OP-{first_id:05d}',f'OP-{second_id:05d}'}
     first_view=must(api.get(f'/api/cases/{c["id"]}?production_id={first_id}'))
-    first_item=first_view['items'][0]
     first_view=complete_delivery(api, first_view, first_id)
     second_view=must(api.get(f'/api/cases/{c["id"]}?production_id={second_id}'))
     assert first_view['delivery_status']=='Completa' and len(first_view['deliveries'])==2
@@ -481,7 +480,7 @@ def test_manual_finish_partial_release_and_reclaim_cycle(clients):
     _,case=create(api,'Liberación parcial tras confirmación manual')
     case=mutate(api,case,'take'); first=mutate(api,case,'convert',conversion())
     first_id=first['production']['id']; qr='CGOP1:'+first['production']['scan_id']
-    second=mutate(api,first,'convert',conversion())
+    mutate(api,first,'convert',conversion())
     first=mutate(api,must(api.get(f'/api/cases/{case["id"]}?production_id={first_id}')),'production/stage',{'production_id':first_id,'stage':'PRINTING'})
     url=f'/api/cases/{case["id"]}/production/confirm-finished'
     waiting=must(api.post(url,json={'production_id':first_id}))

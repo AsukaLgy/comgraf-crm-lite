@@ -10,7 +10,6 @@ from pathlib import Path
 import random
 import ssl
 import re
-import statistics
 import subprocess
 import threading
 import time

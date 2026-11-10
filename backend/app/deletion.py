@@ -2,7 +2,6 @@
 from pathlib import Path
 from fastapi import HTTPException
 from sqlalchemy import delete, func, select, update
-from sqlalchemy.sql.schema import Table
 from .config import settings
 from .db import SessionLocal
 from .models import Base, Case, Client, Contact, Attachment, MailAttachment, MailMessage, Ledger, DeletionAudit, FileCleanup, now

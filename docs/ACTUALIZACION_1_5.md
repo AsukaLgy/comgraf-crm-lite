@@ -1,4 +1,6 @@
 # Comgraf 1.5.0: actualización preparada
+> **Guía vigente:** [Operación](OPERACION.md) contiene el procedimiento actual de actualización, respaldo y diagnóstico para `/opt/comgraf-beta/lite`. Este documento conserva el contexto de la intervención que describe.
+
 
 Esta revisión no despliega la aplicación. Conserva `.runtime/low-resource/.env`, volúmenes de MySQL, adjuntos y configuración de Caddy/Tailscale. Después de revisar y crear el commit que se publicará, reconstruye **solo app** desde el checkout de ese commit:
 

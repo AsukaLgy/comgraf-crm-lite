@@ -1,5 +1,5 @@
 from app.db import SessionLocal
-from app.models import Case, Client, DeletionAudit
+from app.models import DeletionAudit
 from test_workflows import create, must
 
 

@@ -1,6 +1,6 @@
 # Guía de mantenimiento de Comgraf
 
-Esta guía indica dónde cambiar cada comportamiento y qué invariantes debe conservar una intervención futura. Los nombres de campos históricos que ya no participan en el flujo activo están marcados en los modelos; no deben eliminarse sin migración y revisión de respaldos.
+Para despliegue, respaldo y recuperación usa [Operación](OPERACION.md). Esta guía indica dónde cambiar cada comportamiento y qué invariantes debe conservar una intervención futura. Los nombres de campos históricos que ya no participan en el flujo activo están marcados en los modelos; no deben eliminarse sin migración y revisión de respaldos.
 
 ## Mapa del código
 
@@ -9,6 +9,7 @@ Esta guía indica dónde cambiar cada comportamiento y qué invariantes debe con
 | Interfaz, rutas y sesión | `frontend/src/App.jsx` | Shell, navegación, lectura de sesión y permisos visibles. |
 | Vocabulario de formularios | `frontend/src/domain.js` | Opciones compartidas de etapas, estados, prioridades, productos y condición de pago. Espejo para la interfaz; el servidor valida. |
 | Acceso HTTP y formato | `frontend/src/api.js` | Fetch, errores, moneda, cantidades, fechas y conversiones de zona horaria. |
+| Invalidación del expediente | `frontend/src/caseCache.js` | Refresca proyecciones afectadas sin recargar usuarios, roles ni versión al editar título o etapa. |
 | Componentes comunes | `frontend/src/components.jsx` | Paneles, campos, diálogos, formularios y operaciones idempotentes. |
 | Bandejas | `frontend/src/Inbox.jsx` | Pool, filtros, vistas guardadas y búsqueda de expedientes. |
 | Tabla compartida | `frontend/src/CaseTable.jsx` | Presentación de casos en bandejas e historial de cliente. |
@@ -19,8 +20,8 @@ Esta guía indica dónde cambiar cada comportamiento y qué invariantes debe con
 | Etapas | `frontend/src/ProductionStages.jsx` | Barra de cinco etapas, clasificación histórica, programación, bloqueos y retrocesos. |
 | Entrega y finanzas | `frontend/src/DeliveryFinance.jsx` | Registro parcial/completo y abono transaccional opcional, saldos y permisos financieros. |
 | Anulación comercial | `frontend/src/CasePage.jsx`, `DeliveryFinance.jsx`; `backend/app/services.py`, `repository.py` | Detener producción conservando entregas y movimientos; ajustar cargo final, resolver devoluciones o dejar revisión financiera pendiente. |
-| Ficha imprimible | `frontend/src/CasePrintSheet.jsx` | Salida de taller y especificaciones del expediente. |
-| Productos y conversión | `frontend/src/ProductForm.jsx` | Partidas, especificaciones, cotizaciones y ampliación del mismo caso a producción. |
+| Ficha imprimible | `frontend/src/CasePrintSheet.jsx`, `PrintDocument.jsx` | Plantilla única y documento aislado con tamaños Carta/media carta. |
+| Productos y conversión | `frontend/src/ProductForm.jsx` | Productos, especificaciones, cotizaciones y ampliación del mismo caso a producción. |
 | Historial de correo | `frontend/src/CaseActivity.jsx`; `backend/app/routers/history.py`, `repository.py` | Lectura de mensajes y adjuntos vinculados, bajo los permisos de la solicitud. |
 | Notas | `frontend/src/Composer.jsx` | Borrador de Nota y plantillas; describe llamadas o visitas sin crear comunicaciones. |
 | Endpoints | `backend/app/routers/` | HTTP, permisos de entrada, dependencias de sesión y traducción a servicios. |
@@ -28,6 +29,7 @@ Esta guía indica dónde cambiar cada comportamiento y qué invariantes debe con
 | Contratos | `backend/app/schemas.py` | Validación Pydantic. Rechaza campos extra y normaliza entradas. |
 | Reglas de negocio | `backend/app/services.py` | Transiciones, permisos de dominio, idempotencia, concurrencia y bitácora. |
 | Consultas y proyecciones | `backend/app/repository.py` | Visibilidad, saldos, estados derivados, serialización y bandejas. |
+| Versión | `backend/app/version.py`, `Dockerfile` | Versión fija de producto y contrato; commit/fecha inyectados en la imagen. |
 | Persistencia | `backend/app/models.py` | Tablas, claves, índices y campos heredados. Cambios de esquema requieren Alembic. |
 | Roles y autenticación | `backend/app/security.py`, `backend/app/routers/auth.py` | Hash de contraseñas, sesión HTTP y autorización de servidor. |
 | Esquema de base | `backend/migrations/versions/` | Cambios incrementales. Las revisiones aplicadas son inmutables. |
@@ -37,7 +39,7 @@ Esta guía indica dónde cambiar cada comportamiento y qué invariantes debe con
 - Un caso conserva su ID durante toda su vida; producción se añade al caso, no crea otro expediente.
 - El responsable operativo único es `Case.owner_id`. `Case.collection_owner_id` y `Production.owner_id` son columnas históricas y solo se conservan para compatibilidad y visibilidad heredada.
 - `Production.stage` usa NEW, APPROVAL, PRINTING, WORKSHOP, READY. Las transiciones permitidas están expresadas como mapas de códigos, no por posiciones de una lista. `NULL` junto con `classification_required` significa etapa heredada ambigua por clasificar; no es una sexta etapa.
-- `Delivery` calcula cantidades acumuladas; el estado Completa solo procede cuando cada partida está entregada. La entrega completa detiene tiempo productivo sin borrar tiempos ni movimientos.
+- `Delivery` calcula cantidades acumuladas; el estado Completa solo procede cuando cada producto está entregado. La entrega completa detiene tiempo productivo sin borrar tiempos ni movimientos.
 - Atención es solo `Abierto`/`Cerrado`; no usar el cierre como condición general de permiso o bloqueo. El predicado de acción inmediata es único en repositorio y servicio de recuperación.
 - El propietario único es `Case.owner_id`. Columnas de responsable por área y datos de subetapa permanecen como históricos, sin reglas activas.
 - Los campos `Production.authorized_at`, `approval_evidence`, `approved_snapshot` y `art_version` conservan datos del flujo anterior. No deben volver a imponer una autorización. `approved_snapshot` sigue siendo una fuente de impresión histórica si no existe `specs_snapshot`.
@@ -72,7 +74,7 @@ Esta guía indica dónde cambiar cada comportamiento y qué invariantes debe con
 
 ## Consultas de bandeja
 
-`repository.case_query()` es la fuente común de predicados para filas y contadores. Los filtros, orden, desempate por ID y paginación se aplican en MySQL; las bandejas usan una proyección ligera sin bitácoras, adjuntos o partidas completas. Al agregar un filtro, actualizar tanto el query compartido como las pruebas de igualdad lista/contador. Verificar índices con las consultas reales antes de añadirlos; no ocultar un problema de rendimiento con caché.
+`repository.case_query()` es la fuente común de predicados para filas y contadores. Los filtros, orden, desempate por ID y paginación se aplican en MySQL; las bandejas usan una proyección ligera sin bitácoras, adjuntos o productos completos. Al agregar un filtro, actualizar tanto el query compartido como las pruebas de igualdad lista/contador. Verificar índices con las consultas reales antes de añadirlos; no ocultar un problema de rendimiento con caché.
 
 ## Estilo y herramientas
 

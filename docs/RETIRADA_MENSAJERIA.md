@@ -1,4 +1,6 @@
 # Actualización del perfil ligero: solicitudes y notas
+> **Guía vigente:** [Operación](OPERACION.md) contiene el procedimiento actual de actualización, respaldo y diagnóstico para `/opt/comgraf-beta/lite`. Este documento conserva el contexto de la intervención que describe.
+
 
 Esta versión conserva clientes, solicitudes, cotizaciones, varias OP, producción, QR, entregas, cobros, calendario, adjuntos y usuarios. Retira el envío, recepción, configuración, sincronización y reintento de correo, además del registro nuevo de WhatsApp. Los mensajes, cuentas, borradores y claves anteriores permanecen. La única migración nueva, `014_nullable_case_origin`, permite `NULL` en `cases.channel`; no actualiza filas existentes ni borra tablas. El campo histórico `pending_message` deja de bloquear cierre o bandejas porque ya no existe una acción de mensajería para resolverlo. Las tareas y demás criterios permanecen.
 
