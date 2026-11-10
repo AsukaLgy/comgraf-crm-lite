@@ -6,7 +6,9 @@ import { randomUUID } from 'node:crypto'
 const credentials = JSON.parse(fs.readFileSync(path.resolve('../.runtime/e2e.json'), 'utf8'))
 const headers = { 'X-Comgraf-Request': '1', 'X-Comgraf-Contract': '5', 'X-Comgraf-Build': '1.4.0' }
 
-test('CAI presenta etiquetas y pulgadas sin añadir cálculos a la hoja impresa', async ({ page }) => {
+test('CAI presenta etiquetas y pulgadas sin añadir cálculos a la hoja impresa', async ({
+  page,
+}) => {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto('/')
@@ -23,15 +25,37 @@ test('CAI presenta etiquetas y pulgadas sin añadir cálculos a la hoja impresa'
     return response.json()
   }
   const client = await post('/clients', { name: 'E2E · CAI ' + Date.now() })
-  let record = await post('/cases', { client_id: client.id, subject: 'E2E · Etiquetas CAI', kind: 'Solicitud', creation_context: 'personal' })
+  let record = await post('/cases', {
+    client_id: client.id,
+    subject: 'E2E · Etiquetas CAI',
+    kind: 'Solicitud',
+    creation_context: 'personal',
+  })
   record = await post(`/cases/${record.id}/take`, { version: record.version, key: randomUUID() })
   record = await post(`/cases/${record.id}/convert`, {
-    version: record.version, key: randomUUID(), committed_date: '2099-12-31',
-    payment_due_date: '2099-12-31', delivery_method: 'Retiro en taller',
-    advance_required: '0', payment_terms: 'Contado',
-    items: [{ product: 'Talonarios de factura CAI', quantity: '10', unit: 'talonarios', unit_price: '125.00',
-      specs: { cai_format: 'Media carta', games_per_pad: 50, paper_type: 'Químico',
-        additional_copies: 2, cai_binding: 'Engrapado', detail: 'Prueba visual' } }],
+    version: record.version,
+    key: randomUUID(),
+    committed_date: '2099-12-31',
+    payment_due_date: '2099-12-31',
+    delivery_method: 'Retiro en taller',
+    advance_required: '0',
+    payment_terms: 'Contado',
+    items: [
+      {
+        product: 'Talonarios de factura CAI',
+        quantity: '10',
+        unit: 'talonarios',
+        unit_price: '125.00',
+        specs: {
+          cai_format: 'Media carta',
+          games_per_pad: 50,
+          paper_type: 'Químico',
+          additional_copies: 2,
+          cai_binding: 'Engrapado',
+          detail: 'Prueba visual',
+        },
+      },
+    ],
   })
 
   await page.goto(`/cases/${record.id}?production_id=${record.production.id}&tab=production`)
@@ -49,13 +73,27 @@ test('CAI presenta etiquetas y pulgadas sin añadir cálculos a la hoja impresa'
   const print = page.locator('.cai-print')
   await expect(print).toContainText('Talonario CAI')
   await expect(print).toContainText('Media carta (5.5 × 8.5 pulgadas)')
-  for (const excluded of ['Juegos por talonario', 'Total de juegos', 'Hojas por juego', 'Total de hojas', 'Precio por talonario', 'Importe']) {
+  for (const excluded of [
+    'Juegos por talonario',
+    'Total de juegos',
+    'Hojas por juego',
+    'Total de hojas',
+    'Precio por talonario',
+    'Importe',
+  ]) {
     await expect(print).not.toContainText(excluded)
   }
-  expect(await page.evaluate(() => [...document.styleSheets].some((sheet) => {
-    try { return [...sheet.cssRules].some((rule) => rule.cssText.includes('size: 8.5in 5.5in')) }
-    catch { return false }
-  }))).toBeTruthy()
+  expect(
+    await page.evaluate(() =>
+      [...document.styleSheets].some((sheet) => {
+        try {
+          return [...sheet.cssRules].some((rule) => rule.cssText.includes('size: 8.5in 5.5in'))
+        } catch {
+          return false
+        }
+      }),
+    ),
+  ).toBeTruthy()
   for (const asset of ['comgraf-logo.png', 'favicon-64.png']) {
     const response = await page.request.get('/branding/' + asset)
     expect(response.ok()).toBeTruthy()

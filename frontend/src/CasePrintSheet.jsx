@@ -42,13 +42,25 @@ export default function CasePrintSheet({ id, record, person, preview = false }) 
     }
     return (
       <article className={`print-sheet cai-print${preview ? ' order-preview-sheet' : ''}`}>
-        {!preview && <div className="print-actions">
-          <button onClick={() => window.open(`/cases/${id}/print?production_id=${production.id}`, '_blank', 'noopener')}>
-            <Printer size={16} />
-            Imprimir / Guardar PDF
-          </button>
-          <Link to={`/cases/${id}?production_id=${production.id}&tab=production`}>Volver a la orden</Link>
-        </div>}
+        {!preview && (
+          <div className="print-actions">
+            <button
+              onClick={() =>
+                window.open(
+                  `/cases/${id}/print?production_id=${production.id}`,
+                  '_blank',
+                  'noopener',
+                )
+              }
+            >
+              <Printer size={16} />
+              Imprimir / Guardar PDF
+            </button>
+            <Link to={`/cases/${id}?production_id=${production.id}&tab=production`}>
+              Volver a la orden
+            </Link>
+          </div>
+        )}
         <header className="cai-print-header">
           <div className="cai-print-heading">
             <div className="cai-print-brand">
@@ -59,7 +71,13 @@ export default function CasePrintSheet({ id, record, person, preview = false }) 
               <strong>{production.order_number}</strong>
               <span>Solicitud {record.number}</span>
             </div>
-            <h1>Orden de producción — {printItems.map(item => item.product).filter((value, index, all) => all.indexOf(value) === index).join(', ')}</h1>
+            <h1>
+              Orden de producción —{' '}
+              {printItems
+                .map((item) => item.product)
+                .filter((value, index, all) => all.indexOf(value) === index)
+                .join(', ')}
+            </h1>
             <div className="cai-meta">
               <span>
                 <b>Creada:</b> {formatDateTime(production.created_at)}
@@ -75,7 +93,7 @@ export default function CasePrintSheet({ id, record, person, preview = false }) 
             <OrderQRCode
               production={production}
               caseNumber={record.number}
-              description={printItems.map(item => item.product).join(", ")}
+              description={printItems.map((item) => item.product).join(', ')}
               client={identity.company || identity.person}
               numberBelow
             />
@@ -169,19 +187,34 @@ export default function CasePrintSheet({ id, record, person, preview = false }) 
   }
   return (
     <article className={`print-sheet${preview ? ' order-preview-sheet' : ''}`}>
-      {!preview && <div className="print-actions">
-        <button onClick={() => window.open(`/cases/${id}/print?production_id=${production?.id}`, '_blank', 'noopener')}>
-          <Printer size={16} />
-          Imprimir / Guardar PDF
-        </button>
-        <Link to={`/cases/${id}${production?.id ? `?production_id=${production.id}&tab=production` : ''}`}>
-          Volver a la solicitud
-        </Link>
-      </div>}
+      {!preview && (
+        <div className="print-actions">
+          <button
+            onClick={() =>
+              window.open(
+                `/cases/${id}/print?production_id=${production?.id}`,
+                '_blank',
+                'noopener',
+              )
+            }
+          >
+            <Printer size={16} />
+            Imprimir / Guardar PDF
+          </button>
+          <Link
+            to={`/cases/${id}${production?.id ? `?production_id=${production.id}&tab=production` : ''}`}
+          >
+            Volver a la solicitud
+          </Link>
+        </div>
+      )}
       <header>
         <div className="print-brand-lockup">
           <img src="/branding/comgraf-logo.png" alt="" />
-          <div><strong>Comunicación Gráfica</strong><p>Orden de producción</p></div>
+          <div>
+            <strong>Comunicación Gráfica</strong>
+            <p>Orden de producción</p>
+          </div>
         </div>
         <h1>
           {record.number}
@@ -195,7 +228,8 @@ export default function CasePrintSheet({ id, record, person, preview = false }) 
         <>
           <h2>{record.subject}</h2>
           <p>
-            Cliente: {record.client.name} · Responsable de la solicitud: {person?.(record.owner_id) || record.owner_name || 'Sin asignar'}
+            Cliente: {record.client.name} · Responsable de la solicitud:{' '}
+            {person?.(record.owner_id) || record.owner_name || 'Sin asignar'}
           </p>
           <p>
             Compromiso: {date(production.committed_date)} · Etapa:{' '}

@@ -30,7 +30,10 @@ async function createCase(page, subject) {
   const record = await response.json()
   await page.goto('/cases/' + record.id)
   await page.getByRole('button', { name: 'Tomar solicitud', exact: true }).click()
-  await page.getByRole('dialog').getByRole('button', { name: 'Tomar solicitud', exact: true }).click()
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Tomar solicitud', exact: true })
+    .click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   return record
 }
@@ -44,13 +47,18 @@ async function scanAsOperator(page, qr) {
   await scanner.getByLabel('Contraseña', { exact: true }).fill(credentials.scanner_password)
   await scanner.getByRole('button', { name: 'Iniciar sesión', exact: true }).click()
   await expect(scanner.getByRole('heading', { name: 'Escáner de trabajo terminado' })).toBeVisible()
-  const response = await scanner.request.post('/api/scanner/scan', { headers, data: { scan_id: qr } })
+  const response = await scanner.request.post('/api/scanner/scan', {
+    headers,
+    data: { scan_id: qr },
+  })
   const result = { ok: response.ok(), data: await response.json() }
   await context.close()
   return result
 }
 
-test('el rol escáner entra a una terminal aislada y no lee expedientes completos', async ({ page }) => {
+test('el rol escáner entra a una terminal aislada y no lee expedientes completos', async ({
+  page,
+}) => {
   await page.getByRole('button', { name: 'Cerrar sesión' }).click()
   await expect(page.getByRole('heading', { name: 'Entrar al espacio de trabajo' })).toBeVisible()
   await page.getByLabel('Usuario', { exact: true }).fill(credentials.scanner_username)
@@ -201,14 +209,26 @@ test('solicitud sin producción se puede cerrar y completar', async ({ page }) =
 })
 test('borrador de nota sobrevive navegación sin tocar borradores históricos', async ({ page }) => {
   const record = await createCase(page, 'E2E Borrador de nota')
-  await page.evaluate((caseId) => localStorage.setItem(`comgraf.draft.1.${caseId}.Correo`, 'Borrador histórico'), record.id)
+  await page.evaluate(
+    (caseId) => localStorage.setItem(`comgraf.draft.1.${caseId}.Correo`, 'Borrador histórico'),
+    record.id,
+  )
   await page.getByLabel('Nota interna', { exact: true }).fill('Nota interna que nunca debe salir')
   await page.getByRole('link', { name: 'Mis solicitudes', exact: true }).click()
   await page.goto('/cases/' + record.id)
-  await expect(page.getByLabel('Nota interna', { exact: true })).toHaveValue('Nota interna que nunca debe salir')
+  await expect(page.getByLabel('Nota interna', { exact: true })).toHaveValue(
+    'Nota interna que nunca debe salir',
+  )
   await page.reload()
-  await expect(page.getByLabel('Nota interna', { exact: true })).toHaveValue('Nota interna que nunca debe salir')
-  expect(await page.evaluate((caseId) => localStorage.getItem(`comgraf.draft.1.${caseId}.Correo`), record.id)).toBe('Borrador histórico')
+  await expect(page.getByLabel('Nota interna', { exact: true })).toHaveValue(
+    'Nota interna que nunca debe salir',
+  )
+  expect(
+    await page.evaluate(
+      (caseId) => localStorage.getItem(`comgraf.draft.1.${caseId}.Correo`),
+      record.id,
+    ),
+  ).toBe('Borrador histórico')
 })
 
 test('error real de validación conserva formulario y conversión mantiene expediente', async ({
@@ -236,18 +256,26 @@ test('error real de validación conserva formulario y conversión mantiene exped
   await expect(d.getByText('Orden creada en Aprobación.')).toBeVisible()
   await d.getByRole('button', { name: 'Mantener en Aprobación' }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
-  await expect(page).toHaveURL(new RegExp('/cases/' + record.id + '\\?(?=.*production_id=\\d+)(?=.*tab=production)'))
+  await expect(page).toHaveURL(
+    new RegExp('/cases/' + record.id + '\\?(?=.*production_id=\\d+)(?=.*tab=production)'),
+  )
   const stageBar = page.getByLabel('Etapas de producción')
   await expect(stageBar).toBeVisible()
   await expect(stageBar.locator('li').first()).not.toHaveClass(/done/)
   await expect(stageBar.locator('li').first().locator('svg')).toHaveCount(0)
   await page.getByRole('button', { name: 'Producción', exact: true }).click()
   await expect(
-    page.getByRole('paragraph').filter({ hasText: 'Ojillos cada 50 cm; conservar este texto' }).first(),
+    page
+      .getByRole('paragraph')
+      .filter({ hasText: 'Ojillos cada 50 cm; conservar este texto' })
+      .first(),
   ).toBeVisible()
   const qrImage = page.getByRole('img', { name: /QR estable de la orden/ }).first()
   await expect(qrImage).toBeVisible()
-  const qrSize = await qrImage.evaluate((image) => ({ width: image.naturalWidth, height: image.naturalHeight }))
+  const qrSize = await qrImage.evaluate((image) => ({
+    width: image.naturalWidth,
+    height: image.naturalHeight,
+  }))
   expect(qrSize.width).toBeGreaterThan(0)
   expect(qrSize.height).toBe(qrSize.width)
   await page.getByRole('link', { name: 'Imprimir orden de producción' }).first().click()
@@ -256,7 +284,9 @@ test('error real de validación conserva formulario y conversión mantiene exped
   await page.screenshot({ path: '../.runtime/comgraf-ficha.png', fullPage: true })
 })
 
-test('una solicitud admite varias partidas por orden y varias órdenes independientes', async ({ page }) => {
+test('una solicitud admite varias partidas por orden y varias órdenes independientes', async ({
+  page,
+}) => {
   const record = await createCase(page, 'E2E Varias órdenes en un expediente')
   await page.getByRole('button', { name: 'Generar orden de producción', exact: true }).click()
   let dialog = page.getByRole('dialog')
@@ -270,10 +300,15 @@ test('una solicitud admite varias partidas por orden y varias órdenes independi
   items = dialog.locator('.item-editor')
   await items.nth(1).getByLabel('Producto', { exact: true }).selectOption('Otros trabajos')
   await items.nth(1).getByLabel('Precio unitario (HNL)').fill('15')
-  await items.nth(1).getByLabel('Especificaciones adicionales').fill('Paquete de tarjetas complementario')
+  await items
+    .nth(1)
+    .getByLabel('Especificaciones adicionales')
+    .fill('Paquete de tarjetas complementario')
   await dialog.getByRole('button', { name: /Generar orden de producción/ }).click()
   await dialog.getByRole('button', { name: 'Mantener en Aprobación' }).click()
-  await expect(page).toHaveURL(new RegExp('/cases/' + record.id + '\\?(?=.*production_id=\\d+)(?=.*tab=production)'))
+  await expect(page).toHaveURL(
+    new RegExp('/cases/' + record.id + '\\?(?=.*production_id=\\d+)(?=.*tab=production)'),
+  )
   await page.getByRole('button', { name: 'Producción', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Especificaciones de producción' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Banners y lonas', exact: true })).toBeVisible()
@@ -293,8 +328,12 @@ test('una solicitud admite varias partidas por orden y varias órdenes independi
   await items.nth(0).getByLabel('Precio por talonario (HNL)').fill('20')
   await dialog.getByRole('button', { name: /Generar orden de producción/ }).click()
   await dialog.getByRole('button', { name: 'Pasar a Impresión', exact: true }).click()
-  await expect(page.getByRole('combobox', { name: 'Orden de producción seleccionada' }).locator('option')).toHaveCount(2)
-  await expect(page.getByRole('heading', { name: 'Talonarios y facturas', exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('combobox', { name: 'Orden de producción seleccionada' }).locator('option'),
+  ).toHaveCount(2)
+  await expect(
+    page.getByRole('heading', { name: 'Talonarios y facturas', exact: true }),
+  ).toBeVisible()
   await expect(page.getByText('Etapa actual: Impresión')).toBeVisible()
   await page.goto(firstOrderUrl)
   await page.getByRole('button', { name: 'Producción', exact: true }).click()
@@ -304,10 +343,14 @@ test('una solicitud admite varias partidas por orden y varias órdenes independi
   expect(persisted.production_count).toBe(2)
   expect(persisted.productions.map((order) => order.stage).sort()).toEqual(['APPROVAL', 'PRINTING'])
   expect(persisted.productions.map((order) => order.order_number).filter(Boolean)).toHaveLength(2)
-  const productCounts = await Promise.all(persisted.productions.map(async (order) => {
-    const details = await (await page.request.get(`/api/cases/${record.id}?production_id=${order.id}`)).json()
-    return details.items.length
-  }))
+  const productCounts = await Promise.all(
+    persisted.productions.map(async (order) => {
+      const details = await (
+        await page.request.get(`/api/cases/${record.id}?production_id=${order.id}`)
+      ).json()
+      return details.items.length
+    }),
+  )
   expect(productCounts.sort()).toEqual([1, 2])
 })
 
@@ -340,16 +383,22 @@ test('crear cliente y caso desde formularios y encontrar su historial', async ({
   await page.getByRole('button', { name: 'Nueva solicitud', exact: true }).click()
   const newDialog = page.getByRole('dialog')
   await expect(newDialog.getByLabel('Tipo de atención', { exact: true })).toHaveValue('')
-  expect(await newDialog.getByLabel('Tipo de atención', { exact: true }).locator('option').allTextContents()).toEqual([
-    'Seleccionar tipo de atención', 'Cotización', 'Orden de producción', 'Reclamo',
-  ])
+  expect(
+    await newDialog
+      .getByLabel('Tipo de atención', { exact: true })
+      .locator('option')
+      .allTextContents(),
+  ).toEqual(['Seleccionar tipo de atención', 'Cotización', 'Orden de producción', 'Reclamo'])
   await expect(newDialog.getByLabel('Canal de origen')).toHaveCount(0)
   await expect(newDialog.getByLabel(/Solicitud relacionada/)).toHaveCount(0)
   await page
     .getByRole('dialog')
     .getByLabel('Asunto', { exact: true })
     .fill('Consulta de libretas para librería')
-  await page.getByRole('dialog').getByLabel('Tipo de atención', { exact: true }).selectOption('Solicitud')
+  await page
+    .getByRole('dialog')
+    .getByLabel('Tipo de atención', { exact: true })
+    .selectOption('Solicitud')
   await page.getByRole('dialog').getByRole('button', { name: 'Guardar', exact: true }).click()
   await expect(
     page.getByRole('heading', { name: 'Consulta de libretas para librería' }),
@@ -498,7 +547,9 @@ test('cotización aceptada, producción activa, bloqueo, entrega completa y cobr
   await dialog.getByRole('button', { name: /Generar orden de producción/ }).click()
   await expect(dialog.getByText('Orden creada en Aprobación.')).toBeVisible()
   await dialog.getByRole('button', { name: 'Mantener en Aprobación' }).click()
-  await expect(page).toHaveURL(new RegExp('/cases/' + record.id + '\\?(?=.*production_id=\\d+)(?=.*tab=production)'))
+  await expect(page).toHaveURL(
+    new RegExp('/cases/' + record.id + '\\?(?=.*production_id=\\d+)(?=.*tab=production)'),
+  )
   await page.reload()
   await page.getByRole('button', { name: 'Actividad', exact: true }).click()
   const orderLink = page.getByRole('link', { name: /Orden OP-/ })
@@ -534,15 +585,19 @@ test('cotización aceptada, producción activa, bloqueo, entrega completa y cobr
   await dialog.getByLabel('Versión del arte').fill('v1')
   await dialog.getByRole('button', { name: 'Guardar' }).click()
   await page.getByRole('button', { name: 'Producción' }).click()
-  const orderNumber = (await (await page.request.get(`/api/cases/${record.id}`)).json()).production.order_number
-  const stage = (name) => page.getByRole('button', { name: new RegExp(`^${name} de ${orderNumber}\\.`) })
+  const orderNumber = (await (await page.request.get(`/api/cases/${record.id}`)).json()).production
+    .order_number
+  const stage = (name) =>
+    page.getByRole('button', { name: new RegExp(`^${name} de ${orderNumber}\\.`) })
   await stage('Impresión').click()
   await expect(stage('Impresión')).toHaveAttribute('aria-current', 'step')
   await stage('Aprobación').click()
   await expect(stage('Aprobación')).toHaveAttribute('aria-current', 'step')
   await stage('Impresión').click()
   await stage('Encuadernación').click()
-  await expect(page.locator('.production-path').getByRole('button', { name: 'Confirmar trabajo terminado' })).toBeVisible()
+  await expect(
+    page.locator('.production-path').getByRole('button', { name: 'Confirmar trabajo terminado' }),
+  ).toBeVisible()
   const currentForScan = await (await page.request.get(`/api/cases/${record.id}`)).json()
   const scanResponse = await scanAsOperator(page, `CGOP1:${currentForScan.production.scan_id}`)
   expect(scanResponse.ok).toBeTruthy()
@@ -561,8 +616,12 @@ test('cotización aceptada, producción activa, bloqueo, entrega completa y cobr
   dialog = page.getByRole('dialog')
   await dialog.getByRole('radio', { name: 'Retiro en local' }).check()
   await dialog.getByLabel('Recibido por (opcional)').fill('DEMO · María')
-  await dialog.getByLabel('Evidencia / referencia (opcional)').fill('Comprobante E2E entrega completa.')
-  await dialog.getByLabel('Motivo del saldo pendiente').fill('Crédito vencido; retiro autorizado por coordinación.')
+  await dialog
+    .getByLabel('Evidencia / referencia (opcional)')
+    .fill('Comprobante E2E entrega completa.')
+  await dialog
+    .getByLabel('Motivo del saldo pendiente')
+    .fill('Crédito vencido; retiro autorizado por coordinación.')
   await dialog.getByRole('button', { name: 'Registrar entrega con saldo pendiente' }).click()
   await expect(page.getByText('Comprobante E2E entrega completa.')).toBeVisible()
   await page.getByRole('button', { name: 'Cerrar atención' }).click()

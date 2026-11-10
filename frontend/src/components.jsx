@@ -44,14 +44,34 @@ export function Empty({ children = 'No hay registros en esta vista.' }) {
   )
 }
 export function Field({ label, children, ...props }) {
-  const required = Boolean((props.required || children?.props?.required) && (children?.props?.type || props.type) !== 'checkbox')
+  const required = Boolean(
+    (props.required || children?.props?.required) &&
+    (children?.props?.type || props.type) !== 'checkbox',
+  )
   return (
     <label className={'field ' + (props.className || '')}>
-      <span>{label}{required && <span className="required-mark" aria-hidden="true"> *</span>}</span>
+      <span>
+        {label}
+        {required && (
+          <span className="required-mark" aria-hidden="true">
+            {' '}
+            *
+          </span>
+        )}
+      </span>
       {children ? (
-        cloneElement(children, { 'aria-label': label, required, 'aria-required': required || undefined })
+        cloneElement(children, {
+          'aria-label': label,
+          required,
+          'aria-required': required || undefined,
+        })
       ) : (
-        <input aria-label={label} {...props} required={required} aria-required={required || undefined} />
+        <input
+          aria-label={label}
+          {...props}
+          required={required}
+          aria-required={required || undefined}
+        />
       )}
       {required && <small className="required-help">* Campo obligatorio</small>}
     </label>
@@ -74,20 +94,49 @@ export function Select({ label, options, empty, ...props }) {
     </Field>
   )
 }
-export function RadioGroup({ label, name, options, value, onChange, required = false, disabled = false }) {
+export function RadioGroup({
+  label,
+  name,
+  options,
+  value,
+  onChange,
+  required = false,
+  disabled = false,
+}) {
   const generatedName = useId()
-  return <fieldset className="choice-group" disabled={disabled}>
-    <legend>{label}{required && <span className="required-mark" aria-hidden="true"> *</span>}</legend>
-    <div className="choice-options">
-      {options.map(option => <label className={`choice-option${value === option.value ? ' selected' : ''}`} key={option.value}>
-        <input type="radio" name={name || generatedName} value={option.value} checked={value === option.value}
-          required={required} onChange={() => onChange(option.value)} />
-        <span className="choice-mark" aria-hidden="true" />
-        <span>{option.label}</span>
-      </label>)}
-    </div>
-    {required && <small className="required-help">* Campo obligatorio</small>}
-  </fieldset>
+  return (
+    <fieldset className="choice-group" disabled={disabled}>
+      <legend>
+        {label}
+        {required && (
+          <span className="required-mark" aria-hidden="true">
+            {' '}
+            *
+          </span>
+        )}
+      </legend>
+      <div className="choice-options">
+        {options.map((option) => (
+          <label
+            className={`choice-option${value === option.value ? ' selected' : ''}`}
+            key={option.value}
+          >
+            <input
+              type="radio"
+              name={name || generatedName}
+              value={option.value}
+              checked={value === option.value}
+              required={required}
+              onChange={() => onChange(option.value)}
+            />
+            <span className="choice-mark" aria-hidden="true" />
+            <span>{option.label}</span>
+          </label>
+        ))}
+      </div>
+      {required && <small className="required-help">* Campo obligatorio</small>}
+    </fieldset>
+  )
 }
 export function Panel({ title, action, children, className = '' }) {
   return (
@@ -150,8 +199,11 @@ export function FormDialog({
     [error, setError] = useState(null),
     [busy, setBusy] = useState(false),
     [saved, setSaved] = useState(false)
-  const locked = useRef(false), errorRef = useRef(null)
-  useEffect(() => { if (error) errorRef.current?.focus() }, [error])
+  const locked = useRef(false),
+    errorRef = useRef(null)
+  useEffect(() => {
+    if (error) errorRef.current?.focus()
+  }, [error])
   const change = (key, value) => {
     setValues((v) => ({ ...v, [key]: value }))
     setError(null)
@@ -175,20 +227,26 @@ export function FormDialog({
   }
   return (
     <Modal title={title} onClose={onClose} wide={wide} busy={busy}>
-      {saved && afterSave ? afterSave() : <form onSubmit={save}>
-        <div className="dialog-body">
-          {render(values, change)}
-          <div ref={errorRef} tabIndex={-1} aria-label="Error al guardar"><ErrorBox error={error} /></div>
-        </div>
-        <footer>
-          <button type="button" onClick={onClose} disabled={busy}>
-            Cancelar
-          </button>
-          <button className="primary" disabled={busy || !canSubmit}>
-            {busy ? busyLabel : typeof submit === 'function' ? submit(values) : submit}
-          </button>
-        </footer>
-      </form>}
+      {saved && afterSave ? (
+        afterSave()
+      ) : (
+        <form onSubmit={save}>
+          <div className="dialog-body">
+            {render(values, change)}
+            <div ref={errorRef} tabIndex={-1} aria-label="Error al guardar">
+              <ErrorBox error={error} />
+            </div>
+          </div>
+          <footer>
+            <button type="button" onClick={onClose} disabled={busy}>
+              Cancelar
+            </button>
+            <button className="primary" disabled={busy || !canSubmit}>
+              {busy ? busyLabel : typeof submit === 'function' ? submit(values) : submit}
+            </button>
+          </footer>
+        </form>
+      )}
     </Modal>
   )
 }
@@ -220,7 +278,12 @@ export function Operation({
     try {
       const result = await api(`/cases/${record.id}/${path}`, {
         method,
-        body: { ...(record.production?.id ? { production_id: record.production.id } : {}), ...body, version: record.version, key: key.current },
+        body: {
+          ...(record.production?.id ? { production_id: record.production.id } : {}),
+          ...body,
+          version: record.version,
+          key: key.current,
+        },
       })
       onSaved?.(result)
       await Promise.all([

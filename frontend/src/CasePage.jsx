@@ -2,7 +2,18 @@ import { useEffect, useState } from 'react'
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Plus, Paperclip, Printer } from 'lucide-react'
-import { api, can, date, formatDateTime, money, quantity, toUTC, timezone, localInput, uid } from './api'
+import {
+  api,
+  can,
+  date,
+  formatDateTime,
+  money,
+  quantity,
+  toUTC,
+  timezone,
+  localInput,
+  uid,
+} from './api'
 import { Badge, ErrorBox, Loading, Panel, Operation, FormDialog, Field, Empty } from './components'
 import ProductForm, { Specifications } from './ProductForm'
 import CaseAttention from './CaseAttention'
@@ -23,7 +34,9 @@ const sectionParam = {
   'Entregas y cobros': 'delivery',
   Archivos: 'files',
 }
-const sectionByParam = Object.fromEntries(Object.entries(sectionParam).map(([section, param]) => [param, section]))
+const sectionByParam = Object.fromEntries(
+  Object.entries(sectionParam).map(([section, param]) => [param, section]),
+)
 
 export default function CasePage({ user, print = false }) {
   const { id } = useParams(),
@@ -38,11 +51,13 @@ export default function CasePage({ user, print = false }) {
     [attentionBusy, setAttentionBusy] = useState(false),
     [completionNotice, setCompletionNotice] = useState('')
   useEffect(() => {
-    const closeOnHistory = () => setModal((current) => current?.type === 'confirm_finished' ? null : current)
+    const closeOnHistory = () =>
+      setModal((current) => (current?.type === 'confirm_finished' ? null : current))
     window.addEventListener('popstate', closeOnHistory)
     return () => window.removeEventListener('popstate', closeOnHistory)
   }, [])
-  const section = sectionByParam[searchParams.get('tab')] || (selectedProductionId ? 'Producción' : 'Actividad')
+  const section =
+    sectionByParam[searchParams.get('tab')] || (selectedProductionId ? 'Producción' : 'Actividad')
   function setSection(next) {
     const params = new URLSearchParams(searchParams)
     params.set('tab', sectionParam[next])
@@ -55,7 +70,15 @@ export default function CasePage({ user, print = false }) {
     if (!params.has('tab')) params.set('tab', sectionParam[section])
     setSearchParams(params)
   }
-  const query = useQuery({ queryKey: ['case', id, selectedProductionId], queryFn: () => api('/cases/' + id + (selectedProductionId ? `?production_id=${selectedProductionId}` : '')), refetchInterval: print ? false : 15000, refetchOnWindowFocus: !print }),
+  const query = useQuery({
+      queryKey: ['case', id, selectedProductionId],
+      queryFn: () =>
+        api(
+          '/cases/' + id + (selectedProductionId ? `?production_id=${selectedProductionId}` : ''),
+        ),
+      refetchInterval: print ? false : 15000,
+      refetchOnWindowFocus: !print,
+    }),
     people = useQuery({ queryKey: ['users'], queryFn: () => api('/users') })
   if (query.isPending) return <Loading />
   if (query.error) return <ErrorBox error={query.error} />
@@ -63,7 +86,8 @@ export default function CasePage({ user, print = false }) {
     p = c.production,
     users = people.data || [],
     close = () => setModal(null)
-  const attention = can(user, 'attention') && (Number(c.owner_id) === Number(user.id) || can(user, 'assign')),
+  const attention =
+      can(user, 'attention') && (Number(c.owner_id) === Number(user.id) || can(user, 'assign')),
     canTake = can(user, 'attention') && !c.owner_id && c.lifecycle !== 'Completado',
     production = can(user, 'production'),
     finance = can(user, 'finance')
@@ -71,8 +95,13 @@ export default function CasePage({ user, print = false }) {
   const completionBlockers = c.completion_blockers || []
   function openFinishConfirmation() {
     setFinishResult(null)
-    setModal({ type: 'confirm_finished', caseId: c.id, productionId: p.id,
-      orderNumber: p.order_number, selectionKey: selectedProductionId })
+    setModal({
+      type: 'confirm_finished',
+      caseId: c.id,
+      productionId: p.id,
+      orderNumber: p.order_number,
+      selectionKey: selectedProductionId,
+    })
   }
   async function changeLifecycle(action) {
     const result = await api(`/cases/${c.id}/${action}`, {
@@ -168,22 +197,59 @@ export default function CasePage({ user, print = false }) {
     )
   }
   function delivery() {
-    const eligible = (c.productions || []).filter((order) => !order.cancelled_at && !order.blocked_since && !order.classification_required && order.stage === 'READY' && order.delivery_status !== 'Completa')
+    const eligible = (c.productions || []).filter(
+      (order) =>
+        !order.cancelled_at &&
+        !order.blocked_since &&
+        !order.classification_required &&
+        order.stage === 'READY' &&
+        order.delivery_status !== 'Completa',
+    )
     if (!eligible.length) return
     setModal({ type: 'complete_delivery', orders: eligible })
   }
   if (print) return <CasePrintSheet id={id} record={c} person={person} />
   return (
     <>
-      <button className="back-link" onClick={() => { const target = searchParams.get('return'); if (target && /^\/(inbox\/(pool|mine|production|ready|finalized|history)|calendar|search)([?][^#]*)?$/.test(target)) nav(target); else nav(-1) }}>
+      <button
+        className="back-link"
+        onClick={() => {
+          const target = searchParams.get('return')
+          if (
+            target &&
+            /^\/(inbox\/(pool|mine|production|ready|finalized|history)|calendar|search)([?][^#]*)?$/.test(
+              target,
+            )
+          )
+            nav(target)
+          else nav(-1)
+        }}
+      >
         <ArrowLeft size={16} />
         Volver a la bandeja
       </button>
-      {completionNotice && <div className="notice" role="status">{completionNotice}</div>}
-      {user.roles.includes('Administrador') && <details className="secondary-actions"><summary>Más acciones</summary><button type="button" className="danger" onClick={() => setModal({type:'delete'})}>Eliminar definitivamente</button></details>}
+      {completionNotice && (
+        <div className="notice" role="status">
+          {completionNotice}
+        </div>
+      )}
+      {user.roles.includes('Administrador') && (
+        <details className="secondary-actions">
+          <summary>Más acciones</summary>
+          <button type="button" className="danger" onClick={() => setModal({ type: 'delete' })}>
+            Eliminar definitivamente
+          </button>
+        </details>
+      )}
       <CaseAttention
         record={c}
-        onEditTitle={async title => {await api(`/cases/${c.id}/title`,{method:'PATCH',body:{title,version:c.version}});await invalidateCaseViews(qc,{caseId:c.id,clientId:c.client.id})}}
+        onEditTitle={async (title) => {
+          await api(`/cases/${c.id}/title`, {
+            method: 'PATCH',
+            body: { title, version: c.version },
+          })
+          await invalidateCaseViews(qc, { caseId: c.id, clientId: c.client.id })
+        }}
         person={person}
         canAttend={activeAttention}
         canTake={canTake}
@@ -234,8 +300,24 @@ export default function CasePage({ user, print = false }) {
         <ProductionStages
           record={c}
           isAdmin={user.roles.includes('Administrador')}
-          onAdminStage={async stage=>{const result=await api(`/cases/${c.id}/production/admin-stage`,{method:'POST',body:{production_id:p.id,stage,version:c.version,key:uid()}});qc.setQueryData(['case',id,selectedProductionId],result);await invalidateCaseViews(qc,{caseId:c.id,clientId:c.client.id,counts:true});return result}}
-          onAdvanceStage={async stage=>{const result=await api(`/cases/${c.id}/production/stage`,{method:'POST',body:{production_id:p.id,stage,version:c.version,key:uid()}});qc.setQueryData(['case',id,selectedProductionId],result);await invalidateCaseViews(qc,{caseId:c.id,clientId:c.client.id,counts:true});return result}}
+          onAdminStage={async (stage) => {
+            const result = await api(`/cases/${c.id}/production/admin-stage`, {
+              method: 'POST',
+              body: { production_id: p.id, stage, version: c.version, key: uid() },
+            })
+            qc.setQueryData(['case', id, selectedProductionId], result)
+            await invalidateCaseViews(qc, { caseId: c.id, clientId: c.client.id, counts: true })
+            return result
+          }}
+          onAdvanceStage={async (stage) => {
+            const result = await api(`/cases/${c.id}/production/stage`, {
+              method: 'POST',
+              body: { production_id: p.id, stage, version: c.version, key: uid() },
+            })
+            qc.setQueryData(['case', id, selectedProductionId], result)
+            await invalidateCaseViews(qc, { caseId: c.id, clientId: c.client.id, counts: true })
+            return result
+          }}
           onRefresh={() => query.refetch()}
           canManage={production && c.lifecycle !== 'Completado'}
           onSelectProduction={selectProduction}
@@ -349,15 +431,25 @@ export default function CasePage({ user, print = false }) {
                           Registrar decisión
                         </button>
                       )}
-                      {activeAttention && q.status === 'Aceptada' && q.currency === 'HNL' && !q.production_id && (
-                        <button
-                          className="primary"
-                          onClick={() => setModal({ type: 'convert', source: q })}
+                      {activeAttention &&
+                        q.status === 'Aceptada' &&
+                        q.currency === 'HNL' &&
+                        !q.production_id && (
+                          <button
+                            className="primary"
+                            onClick={() => setModal({ type: 'convert', source: q })}
+                          >
+                            Generar orden con esta versión
+                          </button>
+                        )}
+                      {q.production_id && (
+                        <Link
+                          className="button"
+                          to={`/cases/${c.id}?production_id=${q.production_id}&tab=production&from=${encodeURIComponent(searchParams.get('from') || '/inbox/mine')}&return=${encodeURIComponent(searchParams.get('return') || '/inbox/mine')}`}
                         >
-                          Generar orden con esta versión
-                        </button>
+                          Ver {q.order_number}
+                        </Link>
                       )}
-                      {q.production_id && <Link className="button" to={`/cases/${c.id}?production_id=${q.production_id}&tab=production&from=${encodeURIComponent(searchParams.get('from') || '/inbox/mine')}&return=${encodeURIComponent(searchParams.get('return') || '/inbox/mine')}`}>Ver {q.order_number}</Link>}
                     </div>
                   </article>
                 ))
@@ -369,8 +461,21 @@ export default function CasePage({ user, print = false }) {
             </Panel>
           )}
           {section === 'Producción' && c.production_count > 0 && (
-            <Panel title={`Órdenes de producción · ${c.production_count} · ${c.production_pending_count} pendientes`} action={activeAttention && <button className="primary" onClick={() => setModal({ type: 'convert' })}><Plus size={15}/>Agregar orden de producción</button>}>
-              <p>Orden seleccionada: <strong>{p?.order_number}</strong> · {p?.stage_label || 'Pendiente de clasificación'}</p>
+            <Panel
+              title={`Órdenes de producción · ${c.production_count} · ${c.production_pending_count} pendientes`}
+              action={
+                activeAttention && (
+                  <button className="primary" onClick={() => setModal({ type: 'convert' })}>
+                    <Plus size={15} />
+                    Agregar orden de producción
+                  </button>
+                )
+              }
+            >
+              <p>
+                Orden seleccionada: <strong>{p?.order_number}</strong> ·{' '}
+                {p?.stage_label || 'Pendiente de clasificación'}
+              </p>
             </Panel>
           )}
           {section === 'Producción' && p && (
@@ -395,7 +500,13 @@ export default function CasePage({ user, print = false }) {
               ))}
               <h3>Instrucciones</h3>
               <p className="prewrap">{p.instructions || 'Sin instrucciones adicionales'}</p>
-              <OrderQRCode production={p} caseNumber={c.number} description={p.instructions || c.subject} client={c.client.name} compact />
+              <OrderQRCode
+                production={p}
+                caseNumber={c.number}
+                description={p.instructions || c.subject}
+                client={c.client.name}
+                compact
+              />
               {can(user, 'production') &&
                 c.lifecycle !== 'Completado' &&
                 !p.cancelled_at &&
@@ -512,7 +623,17 @@ export default function CasePage({ user, print = false }) {
             <div className="order-preview-panel">
               <Panel
                 title={`Vista previa · ${p.order_number}`}
-                action={<a className="button primary" target="_blank" rel="noopener noreferrer" href={`/cases/${id}/print?production_id=${p.id}`}><Printer size={16} />Imprimir orden de producción</a>}
+                action={
+                  <a
+                    className="button primary"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    href={`/cases/${id}/print?production_id=${p.id}`}
+                  >
+                    <Printer size={16} />
+                    Imprimir orden de producción
+                  </a>
+                }
               >
                 <CasePrintSheet id={id} record={c} person={person} preview />
               </Panel>
@@ -525,7 +646,18 @@ export default function CasePage({ user, print = false }) {
               finance={finance && c.lifecycle !== 'Completado'}
               onOperation={operation}
               onDeliver={delivery}
-              canDeliver={production && c.lifecycle !== 'Completado' && (c.productions || []).some((order) => !order.cancelled_at && !order.blocked_since && !order.classification_required && order.stage === 'READY' && order.delivery_status !== 'Completa')}
+              canDeliver={
+                production &&
+                c.lifecycle !== 'Completado' &&
+                (c.productions || []).some(
+                  (order) =>
+                    !order.cancelled_at &&
+                    !order.blocked_since &&
+                    !order.classification_required &&
+                    order.stage === 'READY' &&
+                    order.delivery_status !== 'Completa',
+                )
+              }
             />
           )}
           {section === 'Archivos' && (
@@ -604,15 +736,44 @@ export default function CasePage({ user, print = false }) {
                       'Programar seguimiento',
                       [
                         { name: 'title', label: 'Acción a realizar', required: true },
-                        ...(finance ? [{ name: 'purpose', label: 'Propósito', options: [
-                          { value: 'ATTENTION', label: 'Seguimiento de atención' },
-                          { value: 'COLLECTION', label: 'Seguimiento de cobro' },
-                        ] }] : []),
-                        { name: 'owner_id', label: 'Responsable', options: (values) => personOptions(values.purpose === 'COLLECTION' ? 'finance' : 'attention'), required: true },
-                        { name: 'due_at', label: `Fecha y hora (${timezone})`, type: 'datetime-local', required: true },
+                        ...(finance
+                          ? [
+                              {
+                                name: 'purpose',
+                                label: 'Propósito',
+                                options: [
+                                  { value: 'ATTENTION', label: 'Seguimiento de atención' },
+                                  { value: 'COLLECTION', label: 'Seguimiento de cobro' },
+                                ],
+                              },
+                            ]
+                          : []),
+                        {
+                          name: 'owner_id',
+                          label: 'Responsable',
+                          options: (values) =>
+                            personOptions(
+                              values.purpose === 'COLLECTION' ? 'finance' : 'attention',
+                            ),
+                          required: true,
+                        },
+                        {
+                          name: 'due_at',
+                          label: `Fecha y hora (${timezone})`,
+                          type: 'datetime-local',
+                          required: true,
+                        },
                       ],
-                      { owner_id: user.id, purpose: finance && !can(user, 'attention') ? 'COLLECTION' : 'ATTENTION' },
-                      (v) => ({ ...v, owner_id: Number(v.owner_id), due_at: toUTC(v.due_at), production_id: v.purpose === 'COLLECTION' ? p?.id : undefined }),
+                      {
+                        owner_id: user.id,
+                        purpose: finance && !can(user, 'attention') ? 'COLLECTION' : 'ATTENTION',
+                      },
+                      (v) => ({
+                        ...v,
+                        owner_id: Number(v.owner_id),
+                        due_at: toUTC(v.due_at),
+                        production_id: v.purpose === 'COLLECTION' ? p?.id : undefined,
+                      }),
                     )
                   }
                 >
@@ -625,7 +786,9 @@ export default function CasePage({ user, print = false }) {
             {c.tasks.map((t) => (
               <div className="task" key={t.id}>
                 <strong>{t.title}</strong>
-                <Badge>{t.purpose === 'COLLECTION' ? 'Seguimiento de cobro' : 'Seguimiento de atención'}</Badge>
+                <Badge>
+                  {t.purpose === 'COLLECTION' ? 'Seguimiento de cobro' : 'Seguimiento de atención'}
+                </Badge>
                 <small>
                   {formatDateTime(t.due_at)} · {person(t.owner_id)}
                 </small>
@@ -723,40 +886,81 @@ export default function CasePage({ user, print = false }) {
           )}
         </aside>
       </div>
-      {modal?.type === 'operation' && <Operation {...modal} record={c} onClose={close} onSaved={result => { if (result.lifecycle === 'Completado' && c.lifecycle !== 'Completado') setCompletionNotice(modal.path === 'payments' ? 'Pago registrado. Solicitud completada automáticamente' : 'Solicitud completada automáticamente') }} />}{' '}
-      {modal?.type === 'complete_delivery' && <CompleteDeliveryDialog record={c} orders={modal.orders} financial={finance || can(user, 'attention')} canCollect={finance} onClose={close} onCompleted={result => { if (result.lifecycle === 'Completado' && c.lifecycle !== 'Completado') setCompletionNotice('Entrega registrada. Solicitud completada automáticamente') }} />}
-      {modal?.type === 'confirm_finished' && modal.caseId === c.id &&
-        modal.productionId === p?.id && modal.selectionKey === selectedProductionId && (
-        <FormDialog
-          title="Confirmar trabajo terminado"
-          initial={{}}
-          submit="Confirmar trabajo terminado"
-          busyLabel="Confirmando…"
+      {modal?.type === 'operation' && (
+        <Operation
+          {...modal}
+          record={c}
           onClose={close}
-          onSave={async () => {
-            setFinishBusy(true)
-            try {
-              const result = await api(`/cases/${modal.caseId}/production/confirm-finished`, {
-                method: 'POST', body: { production_id: modal.productionId },
-              })
-              await Promise.all([
-                qc.invalidateQueries({ queryKey: ['case', String(modal.caseId)] }),
-                qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'case' }),
-              ])
-              setFinishResult(result)
-              return false
-            } finally {
-              setFinishBusy(false)
-            }
+          onSaved={(result) => {
+            if (result.lifecycle === 'Completado' && c.lifecycle !== 'Completado')
+              setCompletionNotice(
+                modal.path === 'payments'
+                  ? 'Pago registrado. Solicitud completada automáticamente'
+                  : 'Solicitud completada automáticamente',
+              )
           }}
-          render={() => <p>¿Confirmar que el trabajo de <strong>{modal.orderNumber}</strong> está físicamente terminado?</p>}
-          afterSave={() => <div className="dialog-body" role="status">
-            <p>{finishResult?.message}</p>
-            {finishResult?.pending_orders?.length > 0 && <p>Órdenes pendientes: {finishResult.pending_orders.map((order) => order.order_number).join(', ')}.</p>}
-            <button onClick={close}>Cerrar</button>
-          </div>}
+        />
+      )}{' '}
+      {modal?.type === 'complete_delivery' && (
+        <CompleteDeliveryDialog
+          record={c}
+          orders={modal.orders}
+          financial={finance || can(user, 'attention')}
+          canCollect={finance}
+          onClose={close}
+          onCompleted={(result) => {
+            if (result.lifecycle === 'Completado' && c.lifecycle !== 'Completado')
+              setCompletionNotice('Entrega registrada. Solicitud completada automáticamente')
+          }}
         />
       )}
+      {modal?.type === 'confirm_finished' &&
+        modal.caseId === c.id &&
+        modal.productionId === p?.id &&
+        modal.selectionKey === selectedProductionId && (
+          <FormDialog
+            title="Confirmar trabajo terminado"
+            initial={{}}
+            submit="Confirmar trabajo terminado"
+            busyLabel="Confirmando…"
+            onClose={close}
+            onSave={async () => {
+              setFinishBusy(true)
+              try {
+                const result = await api(`/cases/${modal.caseId}/production/confirm-finished`, {
+                  method: 'POST',
+                  body: { production_id: modal.productionId },
+                })
+                await Promise.all([
+                  qc.invalidateQueries({ queryKey: ['case', String(modal.caseId)] }),
+                  qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'case' }),
+                ])
+                setFinishResult(result)
+                return false
+              } finally {
+                setFinishBusy(false)
+              }
+            }}
+            render={() => (
+              <p>
+                ¿Confirmar que el trabajo de <strong>{modal.orderNumber}</strong> está físicamente
+                terminado?
+              </p>
+            )}
+            afterSave={() => (
+              <div className="dialog-body" role="status">
+                <p>{finishResult?.message}</p>
+                {finishResult?.pending_orders?.length > 0 && (
+                  <p>
+                    Órdenes pendientes:{' '}
+                    {finishResult.pending_orders.map((order) => order.order_number).join(', ')}.
+                  </p>
+                )}
+                <button onClick={close}>Cerrar</button>
+              </div>
+            )}
+          />
+        )}
       {modal?.type === 'complete' && (
         <FormDialog
           title="Completar solicitud"
@@ -768,8 +972,8 @@ export default function CasePage({ user, print = false }) {
           render={() => (
             <div className="notice">
               <p>
-                La solicitud dejará las bandejas activas y seguirá disponible en el historial de solicitudes y
-                perfil del cliente.
+                La solicitud dejará las bandejas activas y seguirá disponible en el historial de
+                solicitudes y perfil del cliente.
               </p>
               {completionBlockers.length > 0 ? (
                 <>
@@ -794,7 +998,12 @@ export default function CasePage({ user, print = false }) {
           quote={modal.type === 'quote'}
           source={modal.source}
           onClose={close}
-          onCreated={(order) => {const params = new URLSearchParams(searchParams); params.set('production_id', String(order.id)); params.set('tab', 'production'); setSearchParams(params)}}
+          onCreated={(order) => {
+            const params = new URLSearchParams(searchParams)
+            params.set('production_id', String(order.id))
+            params.set('tab', 'production')
+            setSearchParams(params)
+          }}
         />
       )}
       {modal?.type === 'upload' && (
@@ -828,7 +1037,15 @@ export default function CasePage({ user, print = false }) {
           )}
         />
       )}
-      {modal?.type === 'delete' && <DeleteDialog key={id} kind="case" id={id} onClose={close} onDeleted={() => nav('/inbox/mine')}/>}
+      {modal?.type === 'delete' && (
+        <DeleteDialog
+          key={id}
+          kind="case"
+          id={id}
+          onClose={close}
+          onDeleted={() => nav('/inbox/mine')}
+        />
+      )}
     </>
   )
 }

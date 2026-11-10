@@ -2,7 +2,14 @@ import { can, date, formatDateTime, localDate, money, quantity } from './api'
 import { Badge, Empty, Panel } from './components'
 import { HNL_CURRENCY } from './domain'
 
-export default function DeliveryFinance({ record, user, finance, onOperation, onDeliver, canDeliver = false }) {
+export default function DeliveryFinance({
+  record,
+  user,
+  finance,
+  onOperation,
+  onDeliver,
+  canDeliver = false,
+}) {
   const production = record.production
   const financial = finance || can(user, 'attention')
   return (
@@ -10,7 +17,11 @@ export default function DeliveryFinance({ record, user, finance, onOperation, on
       title="Entregas y cobros"
       action={
         <div className="actions">
-          {canDeliver && <button className="primary" onClick={onDeliver}>Registrar entrega de OP completa</button>}
+          {canDeliver && (
+            <button className="primary" onClick={onDeliver}>
+              Registrar entrega de OP completa
+            </button>
+          )}
           {finance &&
             !production.cancellation_review_pending &&
             production.currency === HNL_CURRENCY &&
@@ -166,7 +177,11 @@ export default function DeliveryFinance({ record, user, finance, onOperation, on
                   </td>
                   <td>{quantity(delivery.quantity)}</td>
                   <td>{delivery.receiver}</td>
-                  <td>{delivery.method === 'Entrega (delivery)' ? 'Entrega a domicilio' : delivery.method}</td>
+                  <td>
+                    {delivery.method === 'Entrega (delivery)'
+                      ? 'Entrega a domicilio'
+                      : delivery.method}
+                  </td>
                   <td>{delivery.evidence}</td>
                 </tr>
               ))}

@@ -4,7 +4,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, SlidersHorizontal, Bookmark } from 'lucide-react'
 import { api, can } from './api'
 import { Badge, ErrorBox, Loading, Field, Select, FormDialog } from './components'
-import { PRODUCTION_STAGES, PRODUCTION_STAGE_LABELS, CASE_STATUSES, CASE_PRIORITIES } from './domain'
+import {
+  PRODUCTION_STAGES,
+  PRODUCTION_STAGE_LABELS,
+  CASE_STATUSES,
+  CASE_PRIORITIES,
+} from './domain'
 import CaseTable from './CaseTable'
 import OrderTable from './OrderTable'
 import NewCase from './NewCase'
@@ -36,18 +41,31 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
     [modal, setModal] = useState(null),
     [advanced, setAdvanced] = useState(false)
   const poolView = !home && !search && view === 'pool'
-  const orderView = !search && ['production', 'ready', 'late', 'delivered-period', 'delivered-balances', 'delivered-overdue'].includes(view)
+  const orderView =
+    !search &&
+    [
+      'production',
+      'ready',
+      'late',
+      'delivered-period',
+      'delivered-balances',
+      'delivered-overdue',
+    ].includes(view)
   const key = `comgraf.filters.${user.id}.${home ? 'home' : view}`
   const [filters, setFilters] = useState(() => {
     try {
-      const stored = { ...(JSON.parse(sessionStorage.getItem(key)) || {}), ...Object.fromEntries(new URLSearchParams(location.search)) }
+      const stored = {
+        ...(JSON.parse(sessionStorage.getItem(key)) || {}),
+        ...Object.fromEntries(new URLSearchParams(location.search)),
+      }
       if (['action', 'mine-action'].includes(view)) {
         delete stored.status
         delete stored.lifecycle
       }
       if (view === 'mine') delete stored.lifecycle
       if (view === 'pool') {
-        for (const name of Object.keys(stored)) if (!['sort', 'page'].includes(name)) delete stored[name]
+        for (const name of Object.keys(stored))
+          if (!['sort', 'page'].includes(name)) delete stored[name]
       }
       return stored
     } catch {
@@ -95,8 +113,15 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
     queryFn: () => api('/counts'),
     refetchInterval: 30000,
   })
-  const activeOrderFilters = orderView && ['stage', 'due', 'blocked', 'late', 'pickup'].some((name) => compatibleFilters[name])
-  const orderGrandTotal = view === 'ready' ? counts.data?.ready_orders ?? 0 : view === 'production' ? counts.data?.production_orders ?? 0 : list.data?.total ?? 0
+  const activeOrderFilters =
+    orderView &&
+    ['stage', 'due', 'blocked', 'late', 'pickup'].some((name) => compatibleFilters[name])
+  const orderGrandTotal =
+    view === 'ready'
+      ? (counts.data?.ready_orders ?? 0)
+      : view === 'production'
+        ? (counts.data?.production_orders ?? 0)
+        : (list.data?.total ?? 0)
   const saved = useQuery({ queryKey: ['views'], queryFn: () => api('/views') })
   const clients = useQuery({
     queryKey: ['clients-search', queryText],
@@ -135,11 +160,16 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
               ? 'Una vista del trabajo que necesita tu atención.'
               : search
                 ? `Resultados para «${queryText}»`
-                : orderView ? 'Cada fila es una orden vinculada a su solicitud, con productos y fechas propios.' : 'Atención, producción y seguimiento desde una misma solicitud.'}
+                : orderView
+                  ? 'Cada fila es una orden vinculada a su solicitud, con productos y fechas propios.'
+                  : 'Atención, producción y seguimiento desde una misma solicitud.'}
           </p>
         </div>
         {(view === 'production' ? can(user, 'production') : can(user, 'attention')) && (
-          <button className="primary" onClick={() => setModal(view === 'production' ? 'production-create' : 'new')}>
+          <button
+            className="primary"
+            onClick={() => setModal(view === 'production' ? 'production-create' : 'new')}
+          >
             <Plus size={17} />
             {view === 'production' ? 'Generar orden de producción' : 'Nueva solicitud'}
           </button>
@@ -154,7 +184,9 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
           ].map(([k, label, to]) => (
             <Link to={'/inbox/' + to} className="metric" key={k}>
               <span>{label}</span>
-              <strong>{k==='ready'?counts.data?.ready_orders??'—':counts.data?.[k] ?? '—'}</strong>
+              <strong>
+                {k === 'ready' ? (counts.data?.ready_orders ?? '—') : (counts.data?.[k] ?? '—')}
+              </strong>
               <small>Abrir bandeja →</small>
             </Link>
           ))}
@@ -183,12 +215,27 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
           </div>
         </section>
       )}
-      {['ready', 'delivered-balances', 'delivered-overdue', 'balances', 'overdue', 'refunds', 'cancellation-review'].includes(view) && (
+      {[
+        'ready',
+        'delivered-balances',
+        'delivered-overdue',
+        'balances',
+        'overdue',
+        'refunds',
+        'cancellation-review',
+      ].includes(view) && (
         <div className="tabs section-tabs">
           {[
             'ready',
             ...(can(user, 'finance') || can(user, 'attention')
-              ? ['delivered-balances', 'delivered-overdue', 'balances', 'overdue', 'refunds', 'cancellation-review']
+              ? [
+                  'delivered-balances',
+                  'delivered-overdue',
+                  'balances',
+                  'overdue',
+                  'refunds',
+                  'cancellation-review',
+                ]
               : []),
           ].map((v) => (
             <Link key={v} className={view === v ? 'active' : ''} to={'/inbox/' + v}>
@@ -216,28 +263,37 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
             ) : view === 'mine' || view === 'mine-action' ? (
               <>
                 <Link className={view === 'mine' ? 'active' : ''} to="/inbox/mine">
-                  Todas mis solicitudes <Badge>{personalCounters.data?.mine ?? counts.data?.mine ?? 0}</Badge>
+                  Todas mis solicitudes{' '}
+                  <Badge>{personalCounters.data?.mine ?? counts.data?.mine ?? 0}</Badge>
                 </Link>
                 <Link className={view === 'mine-action' ? 'active' : ''} to="/inbox/mine-action">
-                  Requieren mi acción <Badge>{personalCounters.data?.['mine-action'] ?? counts.data?.['mine-action'] ?? 0}</Badge>
+                  Requieren mi acción{' '}
+                  <Badge>
+                    {personalCounters.data?.['mine-action'] ?? counts.data?.['mine-action'] ?? 0}
+                  </Badge>
                 </Link>
               </>
             ) : (
-                <h2>
-                {search ? 'Solicitudes' : VIEW_LABELS[view]} <Badge>{orderView ? orderGrandTotal : list.data?.total ?? 0}</Badge>
+              <h2>
+                {search ? 'Solicitudes' : VIEW_LABELS[view]}{' '}
+                <Badge>{orderView ? orderGrandTotal : (list.data?.total ?? 0)}</Badge>
               </h2>
             )}
           </div>
-          {!poolView && <div className="actions">
-            <button onClick={() => setAdvanced(!advanced)}>
-              <SlidersHorizontal size={15} />
-              Filtros
-            </button>
-            {!orderView && <button onClick={() => setModal('save')}>
-              <Bookmark size={15} />
-              Guardar vista
-            </button>}
-          </div>}
+          {!poolView && (
+            <div className="actions">
+              <button onClick={() => setAdvanced(!advanced)}>
+                <SlidersHorizontal size={15} />
+                Filtros
+              </button>
+              {!orderView && (
+                <button onClick={() => setModal('save')}>
+                  <Bookmark size={15} />
+                  Guardar vista
+                </button>
+              )}
+            </div>
+          )}
         </div>
         <div className="filters">
           {orderView ? null : poolView ? (
@@ -250,57 +306,67 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
               value={filters.sort || 'newest'}
               onChange={(e) => set('sort', e.target.value)}
             />
-          ) : <>
-          {['history', 'all'].includes(view) && (
-            <Select
-              label="Ciclo de vida"
-              options={['Activo', 'Completado']}
-              empty="Todos"
-              value={filters.lifecycle || ''}
-              onChange={(e) => set('lifecycle', e.target.value)}
-            />
+          ) : (
+            <>
+              {['history', 'all'].includes(view) && (
+                <Select
+                  label="Ciclo de vida"
+                  options={['Activo', 'Completado']}
+                  empty="Todos"
+                  value={filters.lifecycle || ''}
+                  onChange={(e) => set('lifecycle', e.target.value)}
+                />
+              )}
+              {!actionableView && (
+                <Select
+                  label="Estado"
+                  empty="Todos los estados"
+                  options={CASE_STATUSES}
+                  value={filters.status || ''}
+                  onChange={(e) => set('status', e.target.value)}
+                />
+              )}
+              <Select
+                label="Modo"
+                empty="Todos los modos"
+                options={['Atención', 'Producción']}
+                value={filters.mode || ''}
+                onChange={(e) => set('mode', e.target.value)}
+              />
+              <Select
+                label="Prioridad"
+                empty="Cualquier prioridad"
+                options={CASE_PRIORITIES}
+                value={filters.priority || ''}
+                onChange={(e) => set('priority', e.target.value)}
+              />
+              <Select
+                label="Orden"
+                options={[
+                  { value: 'newest', label: 'Más recientes' },
+                  { value: 'oldest', label: 'Más antiguos' },
+                  { value: 'due', label: 'Fecha comprometida' },
+                ]}
+                value={filters.sort || 'newest'}
+                onChange={(e) => set('sort', e.target.value)}
+              />
+              <button className="text-button" onClick={() => setFilters({})}>
+                Limpiar
+              </button>
+            </>
           )}
-          {!actionableView && <Select
-            label="Estado"
-            empty="Todos los estados"
-            options={CASE_STATUSES}
-            value={filters.status || ''}
-            onChange={(e) => set('status', e.target.value)}
-          />}
-          <Select
-            label="Modo"
-            empty="Todos los modos"
-            options={['Atención', 'Producción']}
-            value={filters.mode || ''}
-            onChange={(e) => set('mode', e.target.value)}
-          />
-          <Select
-            label="Prioridad"
-            empty="Cualquier prioridad"
-            options={CASE_PRIORITIES}
-            value={filters.priority || ''}
-            onChange={(e) => set('priority', e.target.value)}
-          />
-          <Select
-            label="Orden"
-            options={[
-              { value: 'newest', label: 'Más recientes' },
-              { value: 'oldest', label: 'Más antiguos' },
-              { value: 'due', label: 'Fecha comprometida' },
-            ]}
-            value={filters.sort || 'newest'}
-            onChange={(e) => set('sort', e.target.value)}
-          />
-          <button className="text-button" onClick={() => setFilters({})}>
-            Limpiar
-          </button>
-          </>}
         </div>
         {advanced && !poolView && (
           <div className="filters advanced">
             <Select
               label="Etapa de producción"
-              options={[{value:'unclassified',label:'Sin clasificar'},...PRODUCTION_STAGES.map(value=>({value,label:PRODUCTION_STAGE_LABELS[value]}))]}
+              options={[
+                { value: 'unclassified', label: 'Sin clasificar' },
+                ...PRODUCTION_STAGES.map((value) => ({
+                  value,
+                  label: PRODUCTION_STAGE_LABELS[value],
+                })),
+              ]}
               empty="Todas"
               value={filters.stage || ''}
               onChange={(e) => set('stage', e.target.value)}
@@ -323,8 +389,28 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
               value={filters.blocked || ''}
               onChange={(e) => set('blocked', e.target.value)}
             />
-            {orderView && <Select label="Atraso" options={[{ value: 'yes', label: 'Solo atrasadas' }]} empty="Todas" value={filters.late || ''} onChange={e => set('late', e.target.value)} />}
-            {view === 'ready' && (can(user, 'finance') || can(user, 'attention')) && <Select label="Situación para retiro" options={[{ value: 'unpaid', label: 'Sin pagos recibidos' }, { value: 'partial', label: 'Con anticipo y saldo' }, { value: 'paid', label: 'Pagadas' }]} empty="Todas" value={filters.pickup || ''} onChange={e => set('pickup', e.target.value)} />}
+            {orderView && (
+              <Select
+                label="Atraso"
+                options={[{ value: 'yes', label: 'Solo atrasadas' }]}
+                empty="Todas"
+                value={filters.late || ''}
+                onChange={(e) => set('late', e.target.value)}
+              />
+            )}
+            {view === 'ready' && (can(user, 'finance') || can(user, 'attention')) && (
+              <Select
+                label="Situación para retiro"
+                options={[
+                  { value: 'unpaid', label: 'Sin pagos recibidos' },
+                  { value: 'partial', label: 'Con anticipo y saldo' },
+                  { value: 'paid', label: 'Pagadas' },
+                ]}
+                empty="Todas"
+                value={filters.pickup || ''}
+                onChange={(e) => set('pickup', e.target.value)}
+              />
+            )}
             {(can(user, 'attention') || can(user, 'finance')) && (
               <Select
                 label="Pago"
@@ -347,7 +433,8 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
                   const rest = { ...v.filters }
                   delete rest.view
                   if (destination === 'pool') {
-                    for (const name of Object.keys(rest)) if (!['sort', 'page'].includes(name)) delete rest[name]
+                    for (const name of Object.keys(rest))
+                      if (!['sort', 'page'].includes(name)) delete rest[name]
                   }
                   if (['action', 'mine-action'].includes(destination)) {
                     delete rest.status
@@ -367,16 +454,39 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
             ))}
           </div>
         )}
-        {activeOrderFilters && list.data?.total === 0 && <div className="filters"><p>No hay órdenes con estos filtros.</p><button onClick={() => setFilters({})}>Limpiar filtros</button></div>}
+        {activeOrderFilters && list.data?.total === 0 && (
+          <div className="filters">
+            <p>No hay órdenes con estos filtros.</p>
+            <button onClick={() => setFilters({})}>Limpiar filtros</button>
+          </div>
+        )}
         <ErrorBox error={list.error} />
         {list.isPending ? (
           <Loading />
         ) : (
-          list.data && (orderView ? <OrderTable items={list.data.items} showBalance={can(user,'finance') || can(user,'attention')}/> : <CaseTable items={list.data.items} remember={remember} user={user} showCreated={view==='pool'} />)
+          list.data &&
+          (orderView ? (
+            <OrderTable
+              items={list.data.items}
+              showBalance={can(user, 'finance') || can(user, 'attention')}
+            />
+          ) : (
+            <CaseTable
+              items={list.data.items}
+              remember={remember}
+              user={user}
+              showCreated={view === 'pool'}
+            />
+          ))
         )}
         <div className="list-footer">
           <span>
-            {orderView ? activeOrderFilters ? `${list.data?.total ?? 0} resultados de ${orderGrandTotal} órdenes` : `${orderGrandTotal} órdenes en esta bandeja` : `${list.data?.total ?? 0} solicitudes en esta vista`} · página {list.data?.page ?? 1} de{' '}
+            {orderView
+              ? activeOrderFilters
+                ? `${list.data?.total ?? 0} resultados de ${orderGrandTotal} órdenes`
+                : `${orderGrandTotal} órdenes en esta bandeja`
+              : `${list.data?.total ?? 0} solicitudes en esta vista`}{' '}
+            · página {list.data?.page ?? 1} de{' '}
             {Math.max(1, Math.ceil((list.data?.total ?? 0) / (list.data?.page_size ?? 25)))}
           </span>
           <div className="actions">
@@ -395,8 +505,16 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
           </div>
         </div>
       </section>
-      {modal === 'new' && <NewCase user={user} creationContext={!home && ['mine', 'mine-action'].includes(view) ? 'personal' : 'pool'} onClose={() => setModal(null)} />}
-      {modal === 'production-create' && <NewProductionRequest user={user} onClose={() => setModal(null)} />}
+      {modal === 'new' && (
+        <NewCase
+          user={user}
+          creationContext={!home && ['mine', 'mine-action'].includes(view) ? 'personal' : 'pool'}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal === 'production-create' && (
+        <NewProductionRequest user={user} onClose={() => setModal(null)} />
+      )}
       {modal === 'save' && !poolView && (
         <FormDialog
           title="Guardar vista"

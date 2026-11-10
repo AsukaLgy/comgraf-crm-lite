@@ -14,18 +14,32 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Mi día', exact: true })).toBeVisible()
   await expect(page.locator('.sidebar .workspace')).toHaveCount(0)
   await expect(page.locator('.sidebar .nav-label')).toHaveText('OPERACIONES')
-  await expect(page.locator('.sidebar').getByRole('img', { name: 'Emblema de Comgraf' })).toBeVisible()
+  await expect(
+    page.locator('.sidebar').getByRole('img', { name: 'Emblema de Comgraf' }),
+  ).toBeVisible()
 })
 
-test('Mi día muestra trabajo pendiente y Pool general conserva solicitudes sin asignar', async ({ page }) => {
-  const clientResponse = await page.request.post('/api/clients', { headers, data: { name: 'E2E · Pool ' + Date.now() } })
+test('Mi día muestra trabajo pendiente y Pool general conserva solicitudes sin asignar', async ({
+  page,
+}) => {
+  const clientResponse = await page.request.post('/api/clients', {
+    headers,
+    data: { name: 'E2E · Pool ' + Date.now() },
+  })
   expect(clientResponse.ok()).toBeTruthy()
   const client = await clientResponse.json()
   const subject = 'E2E · Sin asignar ' + Date.now()
-  const caseResponse = await page.request.post('/api/cases', { headers, data: { client_id: client.id, subject, kind: 'Cotización', creation_context: 'pool' } })
+  const caseResponse = await page.request.post('/api/cases', {
+    headers,
+    data: { client_id: client.id, subject, kind: 'Cotización', creation_context: 'pool' },
+  })
   expect(caseResponse.ok()).toBeTruthy()
 
-  const actionResponse = page.waitForResponse((response) => response.url().includes('/api/cases?') && new URL(response.url()).searchParams.get('view') === 'action')
+  const actionResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/cases?') &&
+      new URL(response.url()).searchParams.get('view') === 'action',
+  )
   await page.reload()
   expect((await actionResponse).ok()).toBeTruthy()
   await expect(page.locator('.home-metrics .metric')).toHaveCount(3)
@@ -59,7 +73,9 @@ test('Mi día muestra trabajo pendiente y Pool general conserva solicitudes sin 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy()
 })
 
-test('las etiquetas de permisos son legibles y el formulario envía solo identificadores internos', async ({ page }) => {
+test('las etiquetas de permisos son legibles y el formulario envía solo identificadores internos', async ({
+  page,
+}) => {
   await page.goto('/settings')
   const roles = await (await page.request.get('/api/roles')).json()
   expect(roles.available.every((permission) => PERMISSION_CATALOG[permission])).toBeTruthy()
@@ -69,7 +85,9 @@ test('las etiquetas de permisos son legibles y el formulario envía solo identif
   await expect(coordinator).toContainText('Permiso reservado de reapertura')
   await expect(coordinator).toContainText('Gestionar cobros y devoluciones')
   await expect(coordinator).toContainText('Registrar ajustes financieros')
-  await expect(page.locator('.role-row').filter({ hasText: 'Administrador' })).toContainText('Acceso completo')
+  await expect(page.locator('.role-row').filter({ hasText: 'Administrador' })).toContainText(
+    'Acceso completo',
+  )
   const scanner = page.locator('.role-row').filter({ hasText: 'Escáner de encuadernación' })
   await expect(scanner).toContainText('Confirmar trabajos terminados por QR')
   await expect(scanner.getByRole('button', { name: 'Configurar' })).toHaveCount(0)
@@ -80,15 +98,23 @@ test('las etiquetas de permisos son legibles y el formulario envía solo identif
     writes.push(route.request().postDataJSON())
     return route.fulfill({ contentType: 'application/json', body: '{"ok":true}' })
   })
-  const production = page.locator('.role-row').filter({ has: page.locator('strong').filter({ hasText: /^Producción$/ }) })
+  const production = page
+    .locator('.role-row')
+    .filter({ has: page.locator('strong').filter({ hasText: /^Producción$/ }) })
   await production.getByRole('button', { name: 'Configurar' }).click()
   let dialog = page.getByRole('dialog')
-  await expect(dialog.getByRole('checkbox', { name: /Gestionar producción y entregas/ })).toBeChecked()
+  await expect(
+    dialog.getByRole('checkbox', { name: /Gestionar producción y entregas/ }),
+  ).toBeChecked()
   await expect(dialog).toContainText('ninguna operación actual del CRM lo consulta')
   await dialog.getByRole('button', { name: 'Guardar' }).click()
   await expect(dialog).toHaveCount(0)
   expect(writes).toHaveLength(0)
-  expect((await (await page.request.get('/api/roles')).json()).roles.find((role) => role.name === 'Producción').permissions).toEqual(original)
+  expect(
+    (await (await page.request.get('/api/roles')).json()).roles.find(
+      (role) => role.name === 'Producción',
+    ).permissions,
+  ).toEqual(original)
 
   await production.getByRole('button', { name: 'Configurar' }).click()
   dialog = page.getByRole('dialog')
@@ -97,7 +123,9 @@ test('las etiquetas de permisos son legibles y el formulario envía solo identif
   await expect(dialog).toHaveCount(0)
   expect(writes).toHaveLength(1)
   expect(new Set(writes[0].permissions)).toEqual(new Set([...original, 'reports']))
-  expect(writes[0].permissions.every((permission) => roles.available.includes(permission))).toBeTruthy()
+  expect(
+    writes[0].permissions.every((permission) => roles.available.includes(permission)),
+  ).toBeTruthy()
 
   await page.setViewportSize({ width: 390, height: 844 })
   await production.getByRole('button', { name: 'Configurar' }).click()

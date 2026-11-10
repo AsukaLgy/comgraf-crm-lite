@@ -48,29 +48,86 @@ export default function CaseTable({ items, remember, user, showCreated = false, 
                 {record.requires_action && <span className="action-dot" title="Requiere acción" />}
                 {!record.owner_id && can(user, 'attention') && <TakeCaseButton record={record} />}
               </td>
-              {showCreated && <td><time dateTime={record.created_at}>{dateHonduras(record.created_at)}</time></td>}
+              {showCreated && (
+                <td>
+                  <time dateTime={record.created_at}>{dateHonduras(record.created_at)}</time>
+                </td>
+              )}
               <td>{record.client.name}</td>
               <td>{record.owner_name || <span className="muted">Sin asignar</span>}</td>
               <td>
                 <Badge>{record.status}</Badge>
               </td>
               <td>
-                {record.productions?.length ? record.productions.map((order) => <div className="order-table-row" key={order.id}>
-                  <Link to={`/cases/${record.id}?production_id=${order.id}&${context}`} onClick={remember}>{order.order_number}</Link>
-                  <Badge tone={order.cancelled_at?'red':order.blocked_since?'amber':order.delivery_status==='Completa'?'teal':order.stage==='READY'?'amber':''}>{order.cancelled_at?'Anulada':order.blocked_since?'Bloqueada':order.delivery_status==='Completa'?'Entregada':order.stage_label}</Badge>
-                  <small>Entrega {order.delivery_status.toLowerCase()}</small>
-                </div>) : (
+                {record.productions?.length ? (
+                  record.productions.map((order) => (
+                    <div className="order-table-row" key={order.id}>
+                      <Link
+                        to={`/cases/${record.id}?production_id=${order.id}&${context}`}
+                        onClick={remember}
+                      >
+                        {order.order_number}
+                      </Link>
+                      <Badge
+                        tone={
+                          order.cancelled_at
+                            ? 'red'
+                            : order.blocked_since
+                              ? 'amber'
+                              : order.delivery_status === 'Completa'
+                                ? 'teal'
+                                : order.stage === 'READY'
+                                  ? 'amber'
+                                  : ''
+                        }
+                      >
+                        {order.cancelled_at
+                          ? 'Anulada'
+                          : order.blocked_since
+                            ? 'Bloqueada'
+                            : order.delivery_status === 'Completa'
+                              ? 'Entregada'
+                              : order.stage_label}
+                      </Badge>
+                      <small>Entrega {order.delivery_status.toLowerCase()}</small>
+                    </div>
+                  ))
+                ) : (
                   <span className="muted">Atención</span>
                 )}
               </td>
               <td>
-                {record.productions?.length ? record.productions.filter(o=>o.committed_date).map(o=><small className="order-date" key={o.id}><Link to={`/cases/${record.id}?production_id=${o.id}&${context}`} onClick={remember}>{o.order_number}</Link> · {date(o.committed_date)}</small>) : '—'}
+                {record.productions?.length
+                  ? record.productions
+                      .filter((o) => o.committed_date)
+                      .map((o) => (
+                        <small className="order-date" key={o.id}>
+                          <Link
+                            to={`/cases/${record.id}?production_id=${o.id}&${context}`}
+                            onClick={remember}
+                          >
+                            {o.order_number}
+                          </Link>{' '}
+                          · {date(o.committed_date)}
+                        </small>
+                      ))
+                  : '—'}
                 <small>{record.next_action}</small>
               </td>
               <td>
                 <Badge tone={priorityTone(record.priority)}>{record.priority}</Badge>
               </td>
-              {onDelete && <td><button type="button" className="text-button danger" onClick={() => onDelete(record)}>Eliminar solicitud</button></td>}
+              {onDelete && (
+                <td>
+                  <button
+                    type="button"
+                    className="text-button danger"
+                    onClick={() => onDelete(record)}
+                  >
+                    Eliminar solicitud
+                  </button>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

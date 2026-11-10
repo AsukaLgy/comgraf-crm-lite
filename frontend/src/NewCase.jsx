@@ -7,13 +7,15 @@ import { validateRtn } from './rtn'
 import ClientIdentityFields from './ClientIdentityFields'
 import { CASE_PRIORITIES } from './domain'
 
-const CASE_KINDS = [
-  'Cotización',
-  { value: 'Solicitud', label: 'Orden de producción' },
-  'Reclamo',
-]
+const CASE_KINDS = ['Cotización', { value: 'Solicitud', label: 'Orden de producción' }, 'Reclamo']
 
-export default function NewCase({ onClose, clientId, client: initialClient, user, creationContext = 'pool' }) {
+export default function NewCase({
+  onClose,
+  clientId,
+  client: initialClient,
+  user,
+  creationContext = 'pool',
+}) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const prefill = initialClient || null
@@ -55,7 +57,9 @@ export default function NewCase({ onClose, clientId, client: initialClient, user
 
         await queryClient.invalidateQueries()
         const from = creationContext === 'pool' ? '/inbox/pool' : '/inbox/mine'
-        navigate(`/cases/${record.id}?from=${encodeURIComponent(from)}&return=${encodeURIComponent(from)}`)
+        navigate(
+          `/cases/${record.id}?from=${encodeURIComponent(from)}&return=${encodeURIComponent(from)}`,
+        )
       }}
       render={(values, setValue) => (
         <>
@@ -108,8 +112,10 @@ export default function NewCase({ onClose, clientId, client: initialClient, user
             </Field>
           </div>
           <p className="muted">
-            {creationContext === 'pool' ? 'Se creará sin asignar en Pool general.' : 'Se asignará a tu usuario.'}
-            {' '}Puede cerrarse sin producir ningún trabajo.
+            {creationContext === 'pool'
+              ? 'Se creará sin asignar en Pool general.'
+              : 'Se asignará a tu usuario.'}{' '}
+            Puede cerrarse sin producir ningún trabajo.
           </p>
         </>
       )}
@@ -117,7 +123,15 @@ export default function NewCase({ onClose, clientId, client: initialClient, user
   )
 }
 
-export function ClientAutocomplete({ user, selectedId, initialClient, onSelect, onClear, id = 'case-client', searchEndpoint = '/clients' }) {
+export function ClientAutocomplete({
+  user,
+  selectedId,
+  initialClient,
+  onSelect,
+  onClear,
+  id = 'case-client',
+  searchEndpoint = '/clients',
+}) {
   const [text, setText] = useState(
     initialClient?.id === Number(selectedId) ? initialClient.name : '',
   )
@@ -212,7 +226,12 @@ export function ClientAutocomplete({ user, selectedId, initialClient, onSelect, 
 
   return (
     <div className="field autocomplete" ref={root}>
-      <label htmlFor={id}>Cliente <span className="required-mark" aria-hidden="true">*</span></label>
+      <label htmlFor={id}>
+        Cliente{' '}
+        <span className="required-mark" aria-hidden="true">
+          *
+        </span>
+      </label>
       <input
         id={id}
         aria-required="true"
@@ -220,7 +239,9 @@ export function ClientAutocomplete({ user, selectedId, initialClient, onSelect, 
         aria-autocomplete="list"
         aria-expanded={open}
         aria-controls={`${id}-suggestions`}
-        aria-activedescendant={open && results[activeIndex] ? `${id}-option-${results[activeIndex].id}` : undefined}
+        aria-activedescendant={
+          open && results[activeIndex] ? `${id}-option-${results[activeIndex].id}` : undefined
+        }
         autoComplete="off"
         value={text}
         placeholder="Buscar nombre, empresa, RTN, teléfono o correo"
@@ -279,7 +300,10 @@ export function ClientAutocomplete({ user, selectedId, initialClient, onSelect, 
       )}
       {createOpen && (
         <div className="inline-create">
-          <ClientIdentityFields values={draft} set={(key, value) => setDraft(current => ({ ...current, [key]: value }))}/>
+          <ClientIdentityFields
+            values={draft}
+            set={(key, value) => setDraft((current) => ({ ...current, [key]: value }))}
+          />
           <Field
             label="Teléfono (opcional)"
             value={draft.phone}
@@ -389,7 +413,9 @@ function ContactAutocomplete({ user, clientId, value, onChange }) {
         aria-autocomplete="list"
         aria-expanded={open}
         aria-controls={`${inputId}-suggestions`}
-        aria-activedescendant={open && results[activeIndex] ? `${inputId}-option-${results[activeIndex].id}` : undefined}
+        aria-activedescendant={
+          open && results[activeIndex] ? `${inputId}-option-${results[activeIndex].id}` : undefined
+        }
         autoComplete="off"
         disabled={!clientId}
         value={text || selectedContact?.name || ''}
@@ -499,7 +525,9 @@ function clientDetails(client) {
 
 function useOutsideDismiss(root, setOpen) {
   useEffect(() => {
-    const closeOutside = (event) => { if (!root.current?.contains(event.target)) setOpen(false) }
+    const closeOutside = (event) => {
+      if (!root.current?.contains(event.target)) setOpen(false)
+    }
     document.addEventListener('pointerdown', closeOutside)
     return () => document.removeEventListener('pointerdown', closeOutside)
   }, [root, setOpen])

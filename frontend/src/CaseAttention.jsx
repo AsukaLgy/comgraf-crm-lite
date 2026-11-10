@@ -31,10 +31,12 @@ export default function CaseAttention({
         <div>
           <div className="eyebrow">
             SOLICITUD {record.number}{' '}
-            <Badge tone={record.production_count ? 'teal' : ''}>{record.production_count ? `${record.production_count} órdenes` : record.mode}</Badge>
+            <Badge tone={record.production_count ? 'teal' : ''}>
+              {record.production_count ? `${record.production_count} órdenes` : record.mode}
+            </Badge>
             {record.lifecycle === 'Completado' && <Badge tone="teal">Completado</Badge>}
           </div>
-          <EditableTitle record={record} onSave={onEditTitle}/>
+          <EditableTitle record={record} onSave={onEditTitle} />
           <div className="case-meta">
             <span>{record.client.name}</span>
             <span>· Responsable: {person(record.owner_id)}</span>
@@ -79,7 +81,10 @@ export default function CaseAttention({
             </button>
           )}
           {record.production && (
-            <Link className="button" to={`/cases/${record.id}/print?production_id=${record.production.id}`}>
+            <Link
+              className="button"
+              to={`/cases/${record.id}/print?production_id=${record.production.id}`}
+            >
               <Printer size={16} />
               Imprimir orden de producción
             </Link>
@@ -99,7 +104,11 @@ export default function CaseAttention({
         </span>
         {record.production_count > 0 && (
           <>
-            <span><strong>{record.production_count} órdenes · {record.production_pending_count} pendientes</strong></span>
+            <span>
+              <strong>
+                {record.production_count} órdenes · {record.production_pending_count} pendientes
+              </strong>
+            </span>
             {record.payment_status && (
               <span>
                 Pago:{' '}
@@ -138,16 +147,76 @@ export default function CaseAttention({
   )
 }
 
-function EditableTitle({record,onSave}) {
-  const [editing,setEditing]=useState(false),[value,setValue]=useState(record.subject),[busy,setBusy]=useState(false),[error,setError]=useState('')
-  function cancel(){setValue(record.subject);setError('');setEditing(false)}
-  async function save(){
-    const title=value.trim()
-    if(!title){setError('Escribe un título.');return}
-    if(title.length>240){setError('El título no puede superar 240 caracteres.');return}
-    if(busy)return
-    setBusy(true);setError('')
-    try{await onSave(title);setEditing(false)}catch(failure){setError(failure.message)}finally{setBusy(false)}
+function EditableTitle({ record, onSave }) {
+  const [editing, setEditing] = useState(false),
+    [value, setValue] = useState(record.subject),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState('')
+  function cancel() {
+    setValue(record.subject)
+    setError('')
+    setEditing(false)
   }
-  return editing?<div className="case-title-edit"><input aria-label="Título de la solicitud" autoFocus maxLength={240} value={value} onChange={e=>setValue(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();void save()}if(e.key==='Escape')cancel()}}/><button type="button" disabled={busy} onClick={()=>void save()}>{busy?'Guardando…':'Guardar'}</button><button type="button" disabled={busy} onClick={cancel}>Cancelar</button>{error&&<small role="alert">{error}</small>}</div>:<div className="case-title-line"><h1>{record.subject}</h1><button type="button" className="text-button" onClick={()=>{setValue(record.subject);setEditing(true)}}><Pencil size={14}/>Editar título</button></div>
+  async function save() {
+    const title = value.trim()
+    if (!title) {
+      setError('Escribe un título.')
+      return
+    }
+    if (title.length > 240) {
+      setError('El título no puede superar 240 caracteres.')
+      return
+    }
+    if (busy) return
+    setBusy(true)
+    setError('')
+    try {
+      await onSave(title)
+      setEditing(false)
+    } catch (failure) {
+      setError(failure.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return editing ? (
+    <div className="case-title-edit">
+      <input
+        aria-label="Título de la solicitud"
+        autoFocus
+        maxLength={240}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            void save()
+          }
+          if (e.key === 'Escape') cancel()
+        }}
+      />
+      <button type="button" disabled={busy} onClick={() => void save()}>
+        {busy ? 'Guardando…' : 'Guardar'}
+      </button>
+      <button type="button" disabled={busy} onClick={cancel}>
+        Cancelar
+      </button>
+      {error && <small role="alert">{error}</small>}
+    </div>
+  ) : (
+    <div className="case-title-line">
+      <h1>{record.subject}</h1>
+      <button
+        type="button"
+        className="text-button"
+        onClick={() => {
+          setValue(record.subject)
+          setEditing(true)
+        }}
+      >
+        <Pencil size={14} />
+        Editar título
+      </button>
+    </div>
+  )
 }

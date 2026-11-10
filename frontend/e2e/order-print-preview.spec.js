@@ -37,7 +37,9 @@ async function decodedPreviewQr(page) {
     await page.addScriptTag({ url: '/qr-test-decoder.js' })
   }
   const image = page.locator('.order-preview-sheet .order-qr img')
-  await expect.poll(() => image.evaluate((element) => element.complete && element.naturalWidth > 0)).toBe(true)
+  await expect
+    .poll(() => image.evaluate((element) => element.complete && element.naturalWidth > 0))
+    .toBe(true)
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       return await page.evaluate(async () => {
@@ -75,7 +77,8 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
   let record = await post(page, '/api/cases', {
     client_id: client.id,
     subject: 'Dos órdenes con vista previa',
-    kind: 'Solicitud', creation_context: 'personal',
+    kind: 'Solicitud',
+    creation_context: 'personal',
   })
   record = await post(page, `/api/cases/${record.id}/take`, {
     version: record.version,
@@ -146,14 +149,18 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
   const orderSelector = page.getByRole('combobox', { name: 'Orden de producción seleccionada' })
   await expect(orderSelector).toHaveValue(String(firstOrder.id))
   let delayedSelection = true
-  await page.route((url) => url.pathname === `/api/cases/${record.id}` &&
-    url.searchParams.get('production_id') === String(secondOrder.id), async (route) => {
-    if (delayedSelection) {
-      delayedSelection = false
-      await new Promise((resolve) => setTimeout(resolve, 600))
-    }
-    await route.continue()
-  })
+  await page.route(
+    (url) =>
+      url.pathname === `/api/cases/${record.id}` &&
+      url.searchParams.get('production_id') === String(secondOrder.id),
+    async (route) => {
+      if (delayedSelection) {
+        delayedSelection = false
+        await new Promise((resolve) => setTimeout(resolve, 600))
+      }
+      await route.continue()
+    },
+  )
   await orderSelector.selectOption(String(secondOrder.id))
   await expect(page.locator('.production-path')).toHaveCount(0)
   await expect(page.locator('.order-preview-sheet')).toHaveCount(0)
@@ -174,8 +181,13 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
   expect(await decodedPreviewQr(page)).toBe(`CGOP1:${secondOrder.scan_id}`)
   await page.screenshot({ path: '../.runtime/order-preview-cai.png', fullPage: true })
 
-  const printLink = page.locator('a[target="_blank"]').filter({ hasText: 'Imprimir orden de producción' })
-  await expect(printLink).toHaveAttribute('href', `/cases/${record.id}/print?production_id=${secondOrder.id}`)
+  const printLink = page
+    .locator('a[target="_blank"]')
+    .filter({ hasText: 'Imprimir orden de producción' })
+  await expect(printLink).toHaveAttribute(
+    'href',
+    `/cases/${record.id}/print?production_id=${secondOrder.id}`,
+  )
   const popupPromise = page.waitForEvent('popup')
   await printLink.click()
   const printPage = await popupPromise

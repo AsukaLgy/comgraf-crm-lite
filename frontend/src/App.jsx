@@ -1,5 +1,13 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { NavLink, Routes, Route, useNavigate, useParams, useLocation, Navigate } from 'react-router-dom'
+import {
+  NavLink,
+  Routes,
+  Route,
+  useNavigate,
+  useParams,
+  useLocation,
+  Navigate,
+} from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   LayoutDashboard,
@@ -34,7 +42,7 @@ function Login({ sessionMessage = '' }) {
   const qc = useQueryClient(),
     [username, setUsername] = useState(''),
     [password, setPassword] = useState(''),
-    [error, setError] = useState(() => sessionMessage ? new Error(sessionMessage) : null),
+    [error, setError] = useState(() => (sessionMessage ? new Error(sessionMessage) : null)),
     [busy, setBusy] = useState(false)
   async function submit(e) {
     e.preventDefault()
@@ -53,7 +61,9 @@ function Login({ sessionMessage = '' }) {
   return (
     <main className="login-page">
       <div className="login-art">
-        <div className="brand"><Brand size="login" /></div>
+        <div className="brand">
+          <Brand size="login" />
+        </div>
         <div>
           <p className="eyebrow">DEL PRIMER CONTACTO A LA ENTREGA</p>
           <h1>
@@ -118,13 +128,22 @@ export default function App() {
     [search, setSearch] = useState(''),
     [logoutError, setLogoutError] = useState(null)
   const me = useQuery({ queryKey: ['me'], queryFn: () => api('/auth/me'), retry: false })
-  const serverVersion = useQuery({ queryKey: ['server-version'], queryFn: () => api('/version'), staleTime: 60000 })
+  const serverVersion = useQuery({
+    queryKey: ['server-version'],
+    queryFn: () => api('/version'),
+    staleTime: 60000,
+  })
   useEffect(() => {
     if (me.data?.timezone) setTimezone(me.data.timezone)
   }, [me.data?.timezone])
   if (me.isPending) return <Loading />
   if (me.error) {
-    if (me.error.status === 401) return <Login sessionMessage={me.error.message.includes('servicio se reinició') ? me.error.message : ''} />
+    if (me.error.status === 401)
+      return (
+        <Login
+          sessionMessage={me.error.message.includes('servicio se reinició') ? me.error.message : ''}
+        />
+      )
     return (
       <>
         <ErrorBox error={me.error} />
@@ -143,12 +162,22 @@ export default function App() {
     ['/calendar', 'Calendario', CalendarDays],
     ['/inbox/finalized', 'Completados', CheckCheck],
     ['/inbox/history', 'Historial', History],
-    ...(can(user, 'partial_release_approve') ? [['/binding-releases', 'Liberaciones parciales', ClipboardCheck]] : []),
+    ...(can(user, 'partial_release_approve')
+      ? [['/binding-releases', 'Liberaciones parciales', ClipboardCheck]]
+      : []),
     ...(can(user, 'reports') ? [['/indicators', 'Indicadores', ChartNoAxesCombined]] : []),
     ['/settings', 'Configuración', SettingsIcon],
   ]
-  const detailContext = /^\/cases\/\d+/.test(currentLocation.pathname) ? new URLSearchParams(currentLocation.search).get('from') : null
-  const activePath = links.some(([path]) => path === detailContext) ? detailContext : (detailContext ? null : /^\/cases\/\d+/.test(currentLocation.pathname) ? '/inbox/mine' : null)
+  const detailContext = /^\/cases\/\d+/.test(currentLocation.pathname)
+    ? new URLSearchParams(currentLocation.search).get('from')
+    : null
+  const activePath = links.some(([path]) => path === detailContext)
+    ? detailContext
+    : detailContext
+      ? null
+      : /^\/cases\/\d+/.test(currentLocation.pathname)
+        ? '/inbox/mine'
+        : null
   async function logout() {
     try {
       await api('/auth/logout', { method: 'POST' })
@@ -159,9 +188,18 @@ export default function App() {
     }
   }
   if (user.roles.length === 1 && user.roles[0] === 'Escáner de encuadernación') {
-    return <Suspense fallback={<Loading />}><BindingScanner user={user} onLogout={logout} /></Suspense>
+    return (
+      <Suspense fallback={<Loading />}>
+        <BindingScanner user={user} onLogout={logout} />
+      </Suspense>
+    )
   }
-  if (/^\/cases\/\d+\/print$/.test(window.location.pathname)) return <Suspense fallback={<Loading />}><PrintDocument /></Suspense>
+  if (/^\/cases\/\d+\/print$/.test(window.location.pathname))
+    return (
+      <Suspense fallback={<Loading />}>
+        <PrintDocument />
+      </Suspense>
+    )
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -169,14 +207,23 @@ export default function App() {
         <p className="nav-label">OPERACIONES</p>
         <nav aria-label="Navegación principal">
           {links.map(([path, label, Icon]) => (
-            <NavLink key={path} to={path} end={path === '/' || path === '/clients'} className={({isActive}) => activePath ? path === activePath ? 'active' : '' : isActive ? 'active' : ''} aria-current={activePath === path ? 'page' : undefined}>
+            <NavLink
+              key={path}
+              to={path}
+              end={path === '/' || path === '/clients'}
+              className={({ isActive }) =>
+                activePath ? (path === activePath ? 'active' : '') : isActive ? 'active' : ''
+              }
+              aria-current={activePath === path ? 'page' : undefined}
+            >
               <Icon size={18} />
               {label}
             </NavLink>
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <span className="online-dot" /> Entorno local <small>Comunicación Gráfica</small><small className="sidebar-version">v{PRODUCT_VERSION}</small>
+          <span className="online-dot" /> Entorno local <small>Comunicación Gráfica</small>
+          <small className="sidebar-version">v{PRODUCT_VERSION}</small>
         </div>
       </aside>
       <div className="workspace-main">
@@ -195,7 +242,9 @@ export default function App() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <button type="submit" aria-label="Buscar">Buscar</button>
+            <button type="submit" aria-label="Buscar">
+              Buscar
+            </button>
           </form>
           <div className="account">
             <div className="avatar">{user.name.slice(0, 2).toUpperCase()}</div>
@@ -218,19 +267,40 @@ export default function App() {
             }
           />
         )}
-        {serverVersion.data && String(serverVersion.data.contract_version) !== API_CONTRACT_VERSION && (
-          <ErrorBox error={{ code: 'CLIENT_CONTRACT_MISMATCH', message: 'El contrato HTTP de interfaz y servidor no coincide.' }} />
-        )}
+        {serverVersion.data &&
+          String(serverVersion.data.contract_version) !== API_CONTRACT_VERSION && (
+            <ErrorBox
+              error={{
+                code: 'CLIENT_CONTRACT_MISMATCH',
+                message: 'El contrato HTTP de interfaz y servidor no coincide.',
+              }}
+            />
+          )}
         <p className="muted version-stamp" aria-label="Versiones del sistema">
-          Web {PRODUCT_VERSION} · API {API_CONTRACT_VERSION} · servidor {serverVersion.data?.product_version || 'sin identificar'}
+          Web {PRODUCT_VERSION} · API {API_CONTRACT_VERSION} · servidor{' '}
+          {serverVersion.data?.product_version || 'sin identificar'}
         </p>
         <main className="main-content">
           <Routes>
             <Route path="/" element={<Inbox key="home" home user={user} />} />
             <Route path="/inbox/:view" element={<InboxRoute user={user} />} />
             <Route path="/search" element={<Inbox key="search" search user={user} />} />
-            <Route path="/cases/:id" element={<Suspense fallback={<Loading />}><CasePage user={user} /></Suspense>} />
-            <Route path="/cases/:id/print" element={<Suspense fallback={<Loading />}><CasePage user={user} print /></Suspense>} />
+            <Route
+              path="/cases/:id"
+              element={
+                <Suspense fallback={<Loading />}>
+                  <CasePage user={user} />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/cases/:id/print"
+              element={
+                <Suspense fallback={<Loading />}>
+                  <CasePage user={user} print />
+                </Suspense>
+              }
+            />
             <Route
               path="/clients"
               element={
@@ -248,7 +318,14 @@ export default function App() {
               }
             />
             <Route path="/calendar" element={<Calendar />} />
-            <Route path="/binding-releases" element={<Guard user={user} permission="partial_release_approve"><PartialReleaseApprovals/></Guard>} />
+            <Route
+              path="/binding-releases"
+              element={
+                <Guard user={user} permission="partial_release_approve">
+                  <PartialReleaseApprovals />
+                </Guard>
+              }
+            />
             <Route
               path="/indicators"
               element={
