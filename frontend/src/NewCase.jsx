@@ -186,7 +186,7 @@ export function ClientAutocomplete({
       onSelect(client)
       setText(client.name)
       setCreateOpen(false)
-      await queryClient.invalidateQueries({ queryKey: ['new-case-client-search'] })
+      void queryClient.invalidateQueries({ queryKey: ['new-case-client-search'] }).catch(() => {})
     } catch (error) {
       setCreateError(error)
     } finally {

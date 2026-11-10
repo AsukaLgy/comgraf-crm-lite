@@ -9,6 +9,7 @@ class Base(DeclarativeBase):
 
 engine = create_engine(
     settings.database_url,
+    hide_parameters=True,
     pool_pre_ping=True,
     isolation_level='READ COMMITTED',
     pool_size=settings.db_pool_size,

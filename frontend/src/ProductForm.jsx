@@ -32,13 +32,60 @@ const CAI_DIMENSIONS = Object.fromEntries(
 const copyNames = { 1: 'Original + 1 copia', 2: 'Original + 2 copias', 3: 'Original + 3 copias' }
 const CAI_BINDINGS = ['Engrapado', 'Pegado', 'Hojas sueltas']
 const MAX_GAMES_PER_PAD = 10000
-export const newItem = () => ({
-  product: PRODUCT.BUSINESS_CARDS,
-  quantity: '100',
-  unit: 'unidades',
-  unit_price: '0',
-  specs: { measure_unit: 'cm' },
+const DEFAULT_ITEM_BY_FAMILY = Object.freeze({
+  standard: { quantity: '100', unit: 'unidades', specs: { measure_unit: 'cm' } },
+  print: {
+    quantity: '1',
+    unit: 'talonarios',
+    specs: {
+      cai_format: 'Media carta',
+      games_per_pad: 25,
+      paper_type: 'Bond',
+      additional_copies: 1,
+      cai_binding: '',
+    },
+  },
 })
+const itemDefaults = (product) =>
+  DEFAULT_ITEM_BY_FAMILY[usesPrintForm(product) ? 'print' : 'standard']
+export const newItem = (product = PRODUCT.BUSINESS_CARDS) => ({
+  product,
+  ...itemDefaults(product),
+  specs: { ...itemDefaults(product).specs },
+  unit_price: '0',
+  quantity_is_default: true,
+})
+export function changeItemProduct(item, product) {
+  if (item.product === product) return item
+  const wasPrint = usesPrintForm(item.product),
+    isPrint = usesPrintForm(product)
+  if (wasPrint === isPrint) return { ...item, product }
+  const defaults = itemDefaults(product)
+  if (isPrint)
+    return {
+      ...item,
+      product,
+      quantity: item.quantity_is_default ? defaults.quantity : item.quantity,
+      unit: defaults.unit,
+      specs: { ...item.specs, ...defaults.specs },
+    }
+  const specs = { ...item.specs }
+  for (const key of [
+    'cai_format',
+    'games_per_pad',
+    'paper_type',
+    'additional_copies',
+    'cai_binding',
+  ])
+    delete specs[key]
+  return {
+    ...item,
+    product,
+    quantity: item.quantity_is_default ? defaults.quantity : item.quantity,
+    unit: defaults.unit,
+    specs,
+  }
+}
 const SPEC_LABELS = {
   width: 'Ancho',
   height: 'Alto',
@@ -222,44 +269,16 @@ function MissingQuoteBindings({ items, onChange }) {
 
 export function ItemsEditor({ items, onChange }) {
   const set = (index, key, value) =>
-    onChange(items.map((item, i) => (i === index ? { ...item, [key]: value } : item)))
+    onChange(
+      items.map((item, i) =>
+        i === index
+          ? { ...item, [key]: value, ...(key === 'quantity' ? { quantity_is_default: false } : {}) }
+          : item,
+      ),
+    )
   const spec = (index, key, value) => set(index, 'specs', { ...items[index].specs, [key]: value })
   const changeProduct = (index, product) =>
-    onChange(
-      items.map((item, i) => {
-        if (i !== index) return item
-        if (usesPrintForm(product)) {
-          return {
-            ...item,
-            product,
-            unit: 'talonarios',
-            specs: usesPrintForm(item.product)
-              ? item.specs
-              : {
-                  ...item.specs,
-                  cai_format: 'Media carta',
-                  games_per_pad: 25,
-                  paper_type: 'Bond',
-                  additional_copies: 1,
-                  cai_binding: '',
-                },
-          }
-        }
-        if (usesPrintForm(item.product)) {
-          const specs = { ...item.specs }
-          for (const key of [
-            'cai_format',
-            'games_per_pad',
-            'paper_type',
-            'additional_copies',
-            'cai_binding',
-          ])
-            delete specs[key]
-          return { ...item, product, unit: 'unidades', specs }
-        }
-        return { ...item, product }
-      }),
-    )
+    onChange(items.map((item, i) => (i === index ? changeItemProduct(item, product) : item)))
   return (
     <div className="items-editor">
       {items.map((item, index) => {
@@ -382,7 +401,9 @@ export function ItemsEditor({ items, onChange }) {
 }
 export function cleanItems(items) {
   return items.map((item) => ({
-    ...Object.fromEntries(Object.entries(item).filter(([key]) => key !== 'cai_summary')),
+    ...Object.fromEntries(
+      Object.entries(item).filter(([key]) => !['cai_summary', 'quantity_is_default'].includes(key)),
+    ),
     specs: Object.fromEntries(
       Object.entries(item.specs || {})
         .filter(([, v]) => v !== '' && v !== null)

@@ -58,8 +58,8 @@ export default function NewProductionRequest({ user, onClose }) {
       method: 'POST',
       body: { ...body, version: 1, key: idempotency.current.key },
     })
-    await qc.invalidateQueries()
     setCreated(result)
+    void qc.invalidateQueries().catch(() => {})
     return false
   }
   async function finish(advance) {

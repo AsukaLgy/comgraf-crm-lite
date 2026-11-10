@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlparse
@@ -13,6 +14,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from anyio import to_thread
 from .config import settings
 from .version import PRODUCT_VERSION, CONTRACT_VERSION
+from .cai import CATALOG_REVISION
 from .db import engine, SessionLocal
 from .routers import auth, clients, cases, production, reports, scanner, history
 from .services import reopen_overdue_attention
@@ -67,6 +69,8 @@ def error_code(status, detail):
 
 @app.middleware('http')
 async def guard(request: Request, call_next):
+    incident_id = uuid.uuid4().hex[:12]
+    request.state.incident_id = incident_id
     if request.method not in ('GET', 'HEAD', 'OPTIONS') and request.url.path.startswith('/api'):
         if request.headers.get('X-Comgraf-Request') != '1':
             return JSONResponse({'detail': 'Solicitud de origen no autorizado'}, 403)
@@ -76,7 +80,14 @@ async def guard(request: Request, call_next):
         origin = request.headers.get('origin')
         if origin and urlparse(origin).netloc != request.headers.get('host'):
             return JSONResponse({'detail': 'Origen no autorizado'}, 403)
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception('Incidencia %s en %s %s', incident_id, request.method, request.url.path)
+        response = JSONResponse({'detail': 'Ocurrió un error interno. Conserva el formulario y reintenta con la misma operación.',
+                                 'code': 'INTERNAL_ERROR', 'incident_id': incident_id}, status_code=500)
+    if response.status_code >= 500:
+        response.headers['X-Comgraf-Incident'] = incident_id
     if request.method in ('GET', 'HEAD') and not request.url.path.startswith('/api/'):
         response.headers['Cache-Control'] = 'no-cache, must-revalidate'
     response.headers['X-Content-Type-Options'] = 'nosniff'
@@ -102,12 +113,16 @@ async def validation_error(request: Request, error: RequestValidationError):
 
 @app.exception_handler(IntegrityError)
 async def integrity(request, error):
-    return JSONResponse({'detail': 'El registro cambió o ya existe. Actualiza y revisa antes de reintentar.'}, 409)
+    logger.exception('Incidencia %s de integridad en %s', request.state.incident_id, request.url.path)
+    return JSONResponse({'detail': 'El registro cambió o ya existe. Actualiza y revisa antes de reintentar.',
+                         'code': 'BUSINESS_CONFLICT', 'incident_id': request.state.incident_id}, 409)
 
 
 @app.exception_handler(OperationalError)
 async def unavailable(request, error):
-    return JSONResponse({'detail': 'La base de datos no está disponible o hubo un conflicto transaccional. Conserva el formulario y reintenta.'}, 503)
+    logger.exception('Incidencia %s de base de datos en %s', request.state.incident_id, request.url.path)
+    return JSONResponse({'detail': 'La base de datos no está disponible. Conserva el formulario y reintenta.',
+                         'code': 'DATABASE_UNAVAILABLE', 'incident_id': request.state.incident_id}, 503)
 
 
 for router in (auth.router, clients.router, cases.router, production.router, reports.router, scanner.router, history.router):
@@ -125,7 +140,7 @@ def health():
 def version():
     return {'product': 'Comgraf', 'product_version': PRODUCT_VERSION, 'build': settings.build_id,
             'commit': settings.comgraf_build_commit, 'build_date': settings.comgraf_build_date,
-            'contract_version': CONTRACT_VERSION}
+            'contract_version': CONTRACT_VERSION, 'catalog_revision': CATALOG_REVISION}
 
 
 static = Path(settings.static_dir)

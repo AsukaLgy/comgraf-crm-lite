@@ -3,7 +3,9 @@ import pytest
 from pydantic import ValidationError
 from app.schemas import ItemInput
 from app.db import SessionLocal
-from app.models import Client, Quote
+from app.models import Case, Client, CreationRequest, Production, Quote
+from app.routers import cases as cases_router
+from sqlalchemy import select
 from test_workflows import create, key, must, mutate, conversion
 
 
@@ -113,6 +115,73 @@ def test_new_production_request_without_contact_uses_general_client_details(clie
     assert snapshot['contact_id'] is None
     assert snapshot['phone'] == customer['phones'][0]
     assert snapshot['email'] == customer['emails'][0]
+
+
+@pytest.mark.parametrize('games', [10, 25, 50])
+def test_new_cai_production_request_is_atomic_and_idempotent(clients, games):
+    api = clients['admin']
+    customer, _ = create(api, f'Cliente de alta CAI {games}')
+    subject = f'Alta CAI {games} juegos'
+    items = [cai_item(quantity='1', unit_price='0' if games == 25 else '125',
+                      specs={**cai_item()['specs'], 'games_per_pad': games})]
+    if games == 10:
+        items.append({'product': 'Tarjetas de presentación', 'quantity': '2',
+                      'unit': 'unidades', 'unit_price': '10', 'specs': {}})
+    payload = {**conversion(), 'client_id': customer['id'], 'subject': subject,
+               'items': items, 'requested_date': None, 'committed_date': None,
+               'payment_due_date': None, 'advance_required': '0', 'version': 1, 'key': key()}
+    created = must(api.post('/api/production-requests', json=payload), 201)
+    assert created['owner_id'] is None and created['production']['stage'] == 'APPROVAL'
+    assert created['items'][0]['product'] == 'Talonario CAI'
+    assert created['items'][0]['quantity'] == '1.000'
+    assert created['items'][0]['specs']['games_per_pad'] == games
+    assert len(created['items']) == len(items)
+    assert len([event for event in created['events'] if event['data'].get('action') == 'created']) == 1
+    assert len([event for event in created['events'] if event['data'].get('action') == 'converted']) == 1
+    replay = must(api.post('/api/production-requests', json=payload), 201)
+    assert replay['id'] == created['id'] and replay['production']['id'] == created['production']['id']
+    with SessionLocal() as db:
+        case_ids = db.scalars(select(Case.id).where(Case.subject == subject)).all()
+        assert case_ids == [created['id']]
+        assert db.scalars(select(Production.id).where(Production.case_id == created['id'])).all() == [created['production']['id']]
+
+
+def test_invalid_cai_quantity_does_not_create_case(clients):
+    api = clients['admin']
+    customer, _ = create(api, 'Cliente de cantidad inválida')
+    subject = 'Alta CAI inválida sin escritura'
+    payload = {**conversion(), 'client_id': customer['id'], 'subject': subject,
+               'items': [cai_item(quantity='0')], 'version': 1, 'key': key()}
+    response = api.post('/api/production-requests', json=payload)
+    assert response.status_code == 422
+    with SessionLocal() as db:
+        assert db.scalar(select(Case.id).where(Case.subject == subject)) is None
+
+
+def test_failed_response_projection_rolls_back_production_request(clients, monkeypatch, caplog):
+    api = clients['admin']
+    customer, _ = create(api, 'Cliente para fallo de respuesta')
+    subject = 'Alta CAI con proyección fallida'
+    request_key = key()
+
+    def failed_projection(*_args, **_kwargs):
+        raise RuntimeError('Fallo sintético de proyección')
+
+    monkeypatch.setattr(cases_router, 'case_response', failed_projection)
+    response = api.post('/api/production-requests', json={**conversion(),
+        'client_id': customer['id'], 'subject': subject, 'items': [cai_item(quantity='1', unit_price='0')],
+        'advance_required': '0', 'version': 1, 'key': request_key})
+    assert response.status_code == 500
+    assert response.headers['content-type'].startswith('application/json')
+    incident_id = response.json()['incident_id']
+    assert response.json()['code'] == 'INTERNAL_ERROR'
+    assert response.headers['x-comgraf-incident'] == incident_id
+    assert incident_id in caplog.text and 'Fallo sintético de proyección' in caplog.text
+    with SessionLocal() as db:
+        assert db.scalar(select(Case.id).where(Case.subject == subject)) is None
+        assert db.scalar(select(Production.id).where(Production.case_id.in_(
+            select(Case.id).where(Case.subject == subject)))) is None
+        assert db.scalar(select(CreationRequest.id).where(CreationRequest.key == request_key)) is None
 
 
 def test_cai_binding_is_saved_per_product_line(clients):

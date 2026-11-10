@@ -1,8 +1,112 @@
-import { HNL_CURRENCY } from './domain.js'
+import { HNL_CURRENCY, PRODUCT } from './domain.js'
 
 export const API_CONTRACT_VERSION = '5'
 export const PRODUCT_VERSION = '1.5.0'
 let contractCheck
+
+const FIELD_NAMES = {
+  client_id: 'Cliente',
+  subject: 'Asunto',
+  product: 'Producto',
+  quantity: 'Cantidad',
+  unit_price: 'Precio',
+  games_per_pad: 'Juegos por talonario',
+  cai_format: 'Formato',
+  paper_type: 'Tipo de papel',
+  additional_copies: 'Número de copias',
+  cai_binding: 'Encuadernación',
+  payment_terms: 'Condición de pago',
+  delivery_method: 'Modalidad de entrega',
+  requested_date: 'Fecha solicitada',
+  committed_date: 'Fecha comprometida',
+  payment_due_date: 'Vencimiento del saldo',
+}
+const makeError = (message, code, status, incidentId) =>
+  Object.assign(new Error(message), { code, status, incidentId })
+const responseData = async (response) => {
+  if (!response.headers.get('content-type')?.toLowerCase().includes('json')) return null
+  try {
+    return await response.json()
+  } catch {
+    return null
+  }
+}
+const validationMessage = (issue) => {
+  const location = Array.isArray(issue.loc) ? issue.loc.filter((part) => part !== 'body') : []
+  const index = location.indexOf('items')
+  const prefix =
+    index >= 0 && Number.isInteger(location[index + 1])
+      ? `Producto ${location[index + 1] + 1} · `
+      : ''
+  const key = [...location]
+    .reverse()
+    .find((part) => typeof part === 'string' && part !== 'items' && part !== 'specs')
+  const field = FIELD_NAMES[key] || (index >= 0 ? 'Producto' : 'Campo')
+  const type = issue.type || ''
+  let problem = 'tiene un valor inválido'
+  if (type === 'missing') problem = 'es obligatorio'
+  else if (type === 'literal_error') problem = 'debe ser una opción permitida'
+  else if (type.includes('int_')) problem = 'debe ser un entero válido'
+  else if (type.includes('date_')) problem = 'debe ser una fecha válida'
+  else if (type === 'greater_than') problem = 'debe ser mayor que cero'
+  else if (type === 'greater_than_equal') problem = 'debe ser cero o mayor'
+  else if (type === 'less_than_equal') problem = 'supera el máximo permitido'
+  else if (type === 'decimal_max_places') problem = 'tiene demasiados decimales'
+  else if (type === 'extra_forbidden') problem = 'no está permitido'
+  else if (type === 'value_error' && typeof issue.msg === 'string')
+    problem = issue.msg.replace(/^Value error,\s*/i, '')
+  return `${prefix}${field}: ${problem}`
+}
+function responseError(response, data) {
+  const detail = typeof data?.detail === 'string' ? data.detail : null
+  const incidentId = data?.incident_id || response.headers.get('X-Comgraf-Incident') || null
+  const status = response.status
+  if (status === 401)
+    return makeError(
+      'La sesión venció. Inicia sesión nuevamente.',
+      'SESSION_EXPIRED',
+      status,
+      incidentId,
+    )
+  if (status === 403)
+    return makeError(
+      detail || 'No tienes autorización para esta operación.',
+      'PERMISSION_DENIED',
+      status,
+      incidentId,
+    )
+  if (status === 422) {
+    const issues = Array.isArray(data?.detail)
+      ? data.detail.map(validationMessage).join(' · ')
+      : null
+    return makeError(
+      issues || detail || 'Revisa los campos del formulario.',
+      'FIELD_VALIDATION',
+      status,
+      incidentId,
+    )
+  }
+  if (status === 409)
+    return makeError(
+      detail || 'El registro cambió. Actualiza y revisa antes de reintentar.',
+      data?.code || 'VERSION_CONFLICT',
+      status,
+      incidentId,
+    )
+  if (status >= 500)
+    return makeError(
+      `Ocurrió un error del servidor${incidentId ? ` (incidencia ${incidentId})` : ''}. Conserva el formulario y reintenta.`,
+      data?.code || 'INTERNAL_ERROR',
+      status,
+      incidentId,
+    )
+  return makeError(
+    detail || `No se pudo completar la operación (HTTP ${status}).`,
+    data?.code || 'HTTP_ERROR',
+    status,
+    incidentId,
+  )
+}
 
 async function assertContract() {
   if (!contractCheck) {
@@ -15,11 +119,22 @@ async function assertContract() {
           error.code = 'CLIENT_CONTRACT_MISMATCH'
           throw error
         }
-        return response.json()
+        const version = await responseData(response)
+        if (!version)
+          throw makeError(
+            'No se pudo comprobar la versión del servidor. Reintenta cuando esté disponible.',
+            'CLIENT_CONTRACT_MISMATCH',
+            response.status,
+          )
+        return version
       })
       .catch((error) => {
         contractCheck = null
-        throw error
+        if (error?.code) throw error
+        throw makeError(
+          'No se pudo conectar con el servidor. Tus datos permanecen en el formulario.',
+          'CONNECTION_ERROR',
+        )
       })
   }
   const version = await contractCheck
@@ -30,11 +145,23 @@ async function assertContract() {
     error.code = 'CLIENT_CONTRACT_MISMATCH'
     throw error
   }
+  return version
 }
 
 export async function api(path, options = {}) {
   const { body, ...rest } = options
-  if ((rest.method || 'GET').toUpperCase() !== 'GET') await assertContract()
+  if ((rest.method || 'GET').toUpperCase() !== 'GET') {
+    const version = await assertContract()
+    if (
+      body?.items?.some((item) => item.product === PRODUCT.CAI) &&
+      version.catalog_revision !== 2
+    ) {
+      throw makeError(
+        'El servidor local todavía usa un catálogo anterior. Reinicia el proceso local antes de crear Talonario CAI.',
+        'CLIENT_CONTRACT_MISMATCH',
+      )
+    }
+  }
   let response
   try {
     response = await fetch('/api' + path, {
@@ -51,26 +178,21 @@ export async function api(path, options = {}) {
     })
   } catch (error) {
     if (error?.name === 'AbortError') throw error
-    throw new Error('No se pudo conectar. Tus datos permanecen en el formulario.')
+    throw makeError(
+      'No se pudo conectar o confirmar la respuesta. Tus datos permanecen en el formulario; reintenta con la misma operación.',
+      'CONNECTION_ERROR',
+    )
   }
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok) {
-    const detail = Array.isArray(data.detail)
-      ? data.detail.map((x) => `${x.loc.slice(1).join('.')}: ${x.msg}`).join(' · ')
-      : typeof data.detail === 'object'
-        ? data.detail?.message
-        : data.detail
-    const error = new Error(detail || 'No se pudo guardar. Reintenta.')
-    error.status = response.status
-    error.code =
-      data.code ||
-      (response.status === 403
-        ? 'PERMISSION_DENIED'
-        : response.status === 422
-          ? 'FIELD_VALIDATION'
-          : 'HTTP_ERROR')
-    throw error
-  }
+  const data = await responseData(response)
+  if (!response.ok) throw responseError(response, data)
+  if (response.status !== 204 && data === null)
+    throw makeError(
+      body?.key
+        ? 'El servidor aceptó la operación, pero no se pudo confirmar su respuesta. Reintenta con los mismos datos; no se creará un duplicado.'
+        : 'El servidor aceptó la operación, pero no se pudo confirmar su respuesta. Conserva el formulario y comprueba el resultado antes de repetir.',
+      'UNCERTAIN_RESULT',
+      response.status,
+    )
   return data
 }
 export const can = (user, permission) =>

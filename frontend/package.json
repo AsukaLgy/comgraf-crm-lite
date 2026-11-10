@@ -2,6 +2,9 @@
   "name": "comgraf",
   "version": "1.5.0",
   "private": true,
+  "engines": {
+    "node": ">=24 <25"
+  },
   "overrides": {
     "esbuild": "0.28.1"
   },
@@ -11,8 +14,8 @@
     "build": "vite build",
     "lint": "eslint src e2e",
     "test:unit": "node --test tests/*.test.mjs",
-    "format": "prettier --write src/CasePage.jsx src/CaseAttention.jsx src/CaseActivity.jsx src/Composer.jsx src/CasePrintSheet.jsx src/ProductionStages.jsx src/DeliveryFinance.jsx src/Inbox.jsx src/CaseTable.jsx src/NewCase.jsx src/domain.js src/components.jsx e2e/workflows.spec.js",
-    "format:check": "prettier --check src/CasePage.jsx src/CaseAttention.jsx src/CaseActivity.jsx src/Composer.jsx src/CasePrintSheet.jsx src/ProductionStages.jsx src/DeliveryFinance.jsx src/Inbox.jsx src/CaseTable.jsx src/NewCase.jsx src/domain.js src/components.jsx e2e/workflows.spec.js",
+    "format": "prettier --write \"src/**/*.{js,jsx}\" \"e2e/**/*.{js,mjs}\" \"tests/**/*.mjs\"",
+    "format:check": "prettier --check \"src/**/*.{js,jsx}\" \"e2e/**/*.{js,mjs}\" \"tests/**/*.mjs\"",
     "test:e2e": "playwright test"
   },
   "dependencies": {
