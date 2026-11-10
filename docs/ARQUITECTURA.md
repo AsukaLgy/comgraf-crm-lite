@@ -21,7 +21,7 @@ Cancelación es un evento excepcional con motivo y fecha. No elimina obligacione
 
 Las bandejas operativas tienen predicados compartidos entre consulta y contador: Sin asignar = activa y sin propietario; Mis solicitudes = activa y propiedad del usuario; Requieren acción = activa, visible y sin propietario, con atención abierta, mensaje entrante pendiente o seguimiento vencido; Requieren mi acción agrega propiedad del usuario. Trabajo futuro, saldo pendiente o producción activa no disparan contacto por sí solos. La carga de trabajo conserva sus criterios operativos separados.
 
-La solicitud se completa solo mediante la acción manual «Completar caso», cuando no quedan trabajos ni gestiones pendientes. Entregar, cobrar, cerrar atención o resolver tareas no la archiva. `completions-preview` y `regularize-completions` conservan su operación explícita para regularización histórica auditada.
+Las solicitudes con producción se completan automáticamente cuando todas sus OP no anuladas están entregadas, cada saldo está resuelto y no quedan gestiones independientes. La evaluación se hace tras las operaciones que resuelven obligaciones, dentro de la misma transacción. `case_completion_blockers` comprueba cada OP y tareas/decisiones pendientes; `finalize_case` registra una sola transición auditada. Las solicitudes sin OP se completan manualmente. Todos los trabajos anulados no activan el cierre automático. `completions-preview` y `regularize-completions` conservan su operación explícita para regularización histórica auditada; el arranque no regulariza datos anteriores.
 
 Cada transición de atención nueva registra usuario, hora, estado anterior/nuevo y origen. La revisión 003 normalizó en lote estados activos anteriores; como esa revisión ya fue aplicada antes de esta corrección, el valor previo de esas filas no se puede recuperar del historial local. No se supone un estado original: las transiciones posteriores sí quedan trazadas.
 
@@ -45,7 +45,7 @@ El calendario distingue eventos (entrega comprometida, inicio programado y segui
 
 ## Catálogo e impresión
 
-`backend/app/cai.py` define productos nuevos, familia fiscal CAI y productos del formulario compartido; `frontend/src/domain.js` refleja las opciones. Recibos por honorarios (CAI), Facturas (CAI), Otros (CAI) y Talonarios y facturas usan las mismas especificaciones de talonario. El producto genérico no se interpreta como documento fiscal. «Talonarios de factura CAI» se acepta para lectura histórica; una OP nueva derivada de ese nombre se guarda como Facturas (CAI), sin modificar la cotización ni su snapshot. La hoja fiscal muestra el nombre real, QR y especificaciones sin precios.
+`backend/app/cai.py` define el catálogo nuevo, la familia fiscal CAI y el formulario compartido; `frontend/src/domain.js` refleja sus opciones. «Talonario CAI» y «Talonarios y facturas» usan las mismas especificaciones; el genérico no se interpreta como documento fiscal. Las cuatro denominaciones CAI anteriores se aceptan para lectura histórica y se normalizan a «Talonario CAI» solo al crear una nueva OP, sin modificar la cotización ni su snapshot. `games_per_pad` es un entero de 1 a 10 000; el resumen de producción deriva juegos y hojas, mientras el precio comercial usa talonarios. La hoja fiscal muestra el producto real, QR y especificaciones aprobadas sin juegos por talonario ni precios.
 
 ## Dinero y tiempo
 

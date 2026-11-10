@@ -36,13 +36,22 @@ async function decodedPreviewQr(page) {
   if (!(await page.evaluate(() => Boolean(window.ZXingBrowser)))) {
     await page.addScriptTag({ url: '/qr-test-decoder.js' })
   }
-  return page.evaluate(async () => {
-    const reader = new window.ZXingBrowser.BrowserQRCodeReader()
-    const result = await reader.decodeFromImageElement(
-      document.querySelector('.order-preview-sheet .order-qr img'),
-    )
-    return result.getText()
-  })
+  const image = page.locator('.order-preview-sheet .order-qr img')
+  await expect.poll(() => image.evaluate((element) => element.complete && element.naturalWidth > 0)).toBe(true)
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await page.evaluate(async () => {
+        const reader = new window.ZXingBrowser.BrowserQRCodeReader()
+        const result = await reader.decodeFromImageElement(
+          document.querySelector('.order-preview-sheet .order-qr img'),
+        )
+        return result.getText()
+      })
+    } catch (error) {
+      if (attempt === 2) throw error
+      await page.waitForTimeout(150)
+    }
+  }
 }
 
 test('historial, pestañas, vista previa e impresión conservan la OP seleccionada', async ({

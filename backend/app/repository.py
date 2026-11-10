@@ -336,6 +336,8 @@ def case_completion_blockers(db, case, *, show_finances=True):
     """Return the shared list of unresolved work that prevents lifecycle completion."""
     blockers = []
     productions = db.scalars(select(Production).where(Production.case_id == case.id).order_by(Production.id)).all()
+    delivered_order_ids = set()
+    settled_order_ids = set()
     for production in productions:
         order_number = f'OP-{production.id:05d}'
         if production.classification_required or production.stage is None:
@@ -344,7 +346,10 @@ def case_completion_blockers(db, case, *, show_finances=True):
             blockers.append(f'{order_number}: hay un bloqueo operativo pendiente.')
         if production.cancellation_review_pending:
             blockers.append(f'{order_number}: la anulación requiere resolución económica.')
-        if not production.cancelled_at and delivery_status(db, case.id, production.id) != 'Completa':
+        delivered = delivery_status(db, case.id, production.id) == 'Completa'
+        if delivered:
+            delivered_order_ids.add(production.id)
+        if not production.cancelled_at and not delivered:
             items = db.scalars(select(Item).where(Item.production_id == production.id).order_by(Item.id)).all()
             remaining = []
             for item in items:
@@ -358,7 +363,13 @@ def case_completion_blockers(db, case, *, show_finances=True):
             blockers.append(f'{order_number}: no hay un importe que permita verificar el pago.')
         if any(entry.amount != 0 and entry.currency != production.currency for entry in entries):
             blockers.append(f'{order_number}: los movimientos usan monedas distintas.')
-        current_balance = Decimal(balance(db, case.id, production.id)['balance'])
+        balance_value = balance(db, case.id, production.id)['balance']
+        if balance_value is None:
+            blockers.append(f'{order_number}: el saldo requiere revisión de moneda.')
+            continue
+        current_balance = Decimal(balance_value)
+        if current_balance == 0:
+            settled_order_ids.add(production.id)
         if current_balance > 0:
             amount = f"{current_balance:,.2f}" if show_finances else ''
             blockers.append(f"{order_number}: quedan {production.currency} {amount} por cobrar." if show_finances else f'{order_number}: queda un saldo por cobrar.')
@@ -367,6 +378,10 @@ def case_completion_blockers(db, case, *, show_finances=True):
             blockers.append(f"{order_number}: hay {production.currency} {amount} pendientes de devolución." if show_finances else f'{order_number}: hay una devolución o saldo a favor pendiente.')
     open_tasks = db.scalars(select(Task).where(Task.case_id == case.id, Task.done_at.is_(None)).order_by(Task.due_at, Task.id)).all()
     for task in open_tasks:
+        if task.category == 'PICKUP' and task.production_id in delivered_order_ids:
+            continue
+        if task.purpose == 'COLLECTION' and task.production_id in settled_order_ids:
+            continue
         blockers.append(f"Hay un seguimiento pendiente para el {task.due_at.date().isoformat()}: {task.title}.")
     open_quotes = db.scalars(select(Quote).where(Quote.case_id == case.id, Quote.status == 'Pendiente').order_by(Quote.version)).all()
     if open_quotes:

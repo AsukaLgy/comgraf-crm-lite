@@ -74,6 +74,21 @@ export function Select({ label, options, empty, ...props }) {
     </Field>
   )
 }
+export function RadioGroup({ label, name, options, value, onChange, required = false, disabled = false }) {
+  const generatedName = useId()
+  return <fieldset className="choice-group" disabled={disabled}>
+    <legend>{label}{required && <span className="required-mark" aria-hidden="true"> *</span>}</legend>
+    <div className="choice-options">
+      {options.map(option => <label className={`choice-option${value === option.value ? ' selected' : ''}`} key={option.value}>
+        <input type="radio" name={name || generatedName} value={option.value} checked={value === option.value}
+          required={required} onChange={() => onChange(option.value)} />
+        <span className="choice-mark" aria-hidden="true" />
+        <span>{option.label}</span>
+      </label>)}
+    </div>
+    {required && <small className="required-help">* Campo obligatorio</small>}
+  </fieldset>
+}
 export function Panel({ title, action, children, className = '' }) {
   return (
     <section className={'panel ' + className}>
@@ -186,6 +201,7 @@ export function Operation({
   initial = {},
   children,
   renderSummary,
+  onSaved,
   onClose,
   transform = (v) => v,
   submit = 'Guardar',
@@ -202,10 +218,11 @@ export function Operation({
     if (lastPayload.current !== null && signature !== lastPayload.current) key.current = uid()
     lastPayload.current = signature
     try {
-      await api(`/cases/${record.id}/${path}`, {
+      const result = await api(`/cases/${record.id}/${path}`, {
         method,
         body: { ...(record.production?.id ? { production_id: record.production.id } : {}), ...body, version: record.version, key: key.current },
       })
+      onSaved?.(result)
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['case', String(record.id)] }),
         qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'case' }),

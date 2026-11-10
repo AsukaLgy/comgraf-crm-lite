@@ -36,6 +36,7 @@ test('CAI presenta etiquetas y pulgadas sin añadir cálculos a la hoja impresa'
 
   await page.goto(`/cases/${record.id}?production_id=${record.production.id}&tab=production`)
   const specs = page.locator('.specs').first()
+  await expect(page.getByRole('heading', { name: 'Talonario CAI', exact: true })).toBeVisible()
   await expect(specs).toContainText('Formato')
   await expect(specs).toContainText('Media carta (5.5 × 8.5 pulgadas)')
   await expect(specs).toContainText('Juegos por talonario')
@@ -46,6 +47,7 @@ test('CAI presenta etiquetas y pulgadas sin añadir cálculos a la hoja impresa'
 
   await page.goto(`/cases/${record.id}/print?production_id=${record.production.id}`)
   const print = page.locator('.cai-print')
+  await expect(print).toContainText('Talonario CAI')
   await expect(print).toContainText('Media carta (5.5 × 8.5 pulgadas)')
   for (const excluded of ['Juegos por talonario', 'Total de juegos', 'Hojas por juego', 'Total de hojas', 'Precio por talonario', 'Importe']) {
     await expect(print).not.toContainText(excluded)

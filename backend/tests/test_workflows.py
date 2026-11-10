@@ -1029,9 +1029,11 @@ def test_production_quote_delivery_debt_and_idempotent_payment(clients,accounts)
     assert Decimal(c['overdue_balance'])==Decimal('900')
     c=mutate(api,c,'payments',{'amount':'900','reference':'Recibo 002'})
     assert c['payment_status']=='Pagado'
-    assert c['lifecycle']=='Activo'
+    assert c['lifecycle']=='Completado'
     assert clients['scanner'].post('/api/scanner/scan',json={'scan_id':'CGOP1:'+c['production']['scan_id']}).status_code==409
     entry=c['ledger'][-1]['id']
+    mutate(api,c,f'payments/{entry}/reverse',{'reason':'Transferencia rechazada'},409)
+    c=mutate(api,c,'reactivate')
     c=mutate(api,c,f'payments/{entry}/reverse',{'reason':'Transferencia rechazada'})
     assert c['balance']=='900.00'
     mutate(api,c,f'payments/{entry}/reverse',{'reason':'No duplicar reversión'},409)

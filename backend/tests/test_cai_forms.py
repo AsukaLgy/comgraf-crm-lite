@@ -11,14 +11,14 @@ FORMATS = ['Media carta', 'Cuarto de carta', '8.5 × 7.25', '8.5 × 8.5', 'Carta
 
 
 def cai_item(**changes):
-    item = {'product':'Talonarios de factura CAI','quantity':'10','unit':'talonarios','unit_price':'125.00',
+    item = {'product':'Talonario CAI','quantity':'10','unit':'talonarios','unit_price':'125.00',
             'specs':{'cai_format':'Media carta','games_per_pad':50,'paper_type':'Químico','additional_copies':2,'cai_binding':'Engrapado','detail':'Original y copias autocopiativas'}}
     item.update(changes)
     return item
 
 
 def test_all_cai_selector_combinations_are_valid_and_closed():
-    for form, games, paper, copies in product(FORMATS, (25,50), ('Bond','Químico'), (1,2,3)):
+    for form, games, paper, copies in product(FORMATS, (10,25,50), ('Bond','Químico'), (1,2,3)):
         for binding in ('Engrapado','Pegado','Hojas sueltas'):
             ItemInput.model_validate(cai_item(specs={'cai_format':form,'games_per_pad':games,'paper_type':paper,'additional_copies':copies,'cai_binding':binding}))
     with pytest.raises(ValidationError):
@@ -31,6 +31,9 @@ def test_all_cai_selector_combinations_are_valid_and_closed():
         ItemInput.model_validate(cai_item(specs={'cai_format':'Media carta','games_per_pad':50,'paper_type':'Bond','additional_copies':1}))
     with pytest.raises(ValidationError):
         ItemInput.model_validate(cai_item(specs={'cai_format':'Media carta','games_per_pad':50,'paper_type':'Bond','additional_copies':1,'cai_binding':'Espiral'}))
+    for invalid in (0, -1, 1.5, '1.5', '', 10001):
+        with pytest.raises(ValidationError):
+            ItemInput.model_validate(cai_item(specs={**cai_item()['specs'], 'games_per_pad': invalid}))
 
 
 def test_cai_order_uses_pads_as_commercial_quantity_and_snapshots_client(clients):
@@ -53,6 +56,63 @@ def test_cai_order_uses_pads_as_commercial_quantity_and_snapshots_client(clients
     assert second['production']['scan_id']!=production['scan_id']
     first_again=must(api.get(f"/api/cases/{case['id']}?production_id={production['id']}"))
     assert first_again['production']['scan_id']==production['scan_id']
+
+
+@pytest.mark.parametrize('games', [10, 25, 50])
+def test_games_per_pad_are_validated_by_api_and_do_not_change_commercial_price(clients, games):
+    api = clients['admin']
+    _, case = create(api, f'{games} juegos por talonario')
+    specs = {**cai_item()['specs'], 'games_per_pad': games}
+    result = mutate(api, case, 'convert', {**conversion(), 'items': [cai_item(specs=specs)]})
+    saved = result['production']['specs_snapshot']['items'][0]
+    assert saved['specs']['games_per_pad'] == games
+    assert saved['cai_summary'] == {'total_games': 10 * games, 'sheets_per_game': 3,
+                                    'finished_sheets': 30 * games}
+    assert result['production']['price'] == '1250.00'
+
+
+def test_games_per_pad_invalid_values_are_rejected_by_api(clients):
+    api = clients['admin']
+    _, case = create(api, 'Juegos inválidos')
+    for invalid in (0, -1, 1.5, '1.5', '', 10001, None):
+        specs = {**cai_item()['specs'], 'games_per_pad': invalid}
+        response = api.post(f"/api/cases/{case['id']}/convert", json={**conversion(),
+            'items': [cai_item(specs=specs)], 'version': case['version'], 'key': key()})
+        assert response.status_code == 422, (invalid, response.text)
+    assert must(api.get(f"/api/cases/{case['id']}"))['production'] is None
+
+
+def test_historical_quote_name_maps_to_single_current_product_without_rewriting_quote(clients):
+    api = clients['admin']
+    _, case = create(api, 'Cotización CAI histórica')
+    quote = mutate(api, case, 'quotes', {'items': [cai_item()], 'valid_until': '2099-12-31'})
+    quote_id = quote['quotes'][-1]['id']
+    quote = mutate(api, quote, f'quotes/{quote_id}/decision', {'status': 'Aceptada', 'evidence': 'Aceptada'})
+    with SessionLocal.begin() as db:
+        historical = db.get(Quote, quote_id)
+        old_items = [dict(row) for row in historical.items]
+        old_items[0]['product'] = 'Recibos por honorarios (CAI)'
+        historical.items = old_items
+    order = mutate(api, quote, 'convert', {**conversion(), 'quote_id': quote_id, 'items': []})
+    assert order['items'][0]['product'] == 'Talonario CAI'
+    assert order['production']['specs_snapshot']['items'][0]['product'] == 'Talonario CAI'
+    with SessionLocal() as db:
+        assert db.get(Quote, quote_id).items[0]['product'] == 'Recibos por honorarios (CAI)'
+
+
+def test_new_production_request_without_contact_uses_general_client_details(clients):
+    api = clients['admin']
+    customer, _ = create(api, 'Cliente con contacto adicional')
+    must(api.post(f"/api/clients/{customer['id']}/contacts", json={
+        'name': 'Contacto aparte', 'phone': '9999-1111', 'email': 'aparte@example.test'}), 201)
+    created = must(api.post('/api/production-requests', json={**conversion(),
+        'client_id': customer['id'], 'subject': 'Nueva OP sin contacto', 'version': 1, 'key': key()}), 201)
+    assert created['owner_id'] is None and created['contact_id'] is None
+    assert created['production']['contact_id'] is None
+    snapshot = created['production']['client_snapshot']
+    assert snapshot['contact_id'] is None
+    assert snapshot['phone'] == customer['phones'][0]
+    assert snapshot['email'] == customer['emails'][0]
 
 
 def test_cai_binding_is_saved_per_product_line(clients):

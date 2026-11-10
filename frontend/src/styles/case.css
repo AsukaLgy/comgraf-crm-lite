@@ -11,6 +11,15 @@
 .production-pending-orders .text-button{min-height:27px;padding:3px 6px;font-size:12px}
 .production-controls>.actions{margin-left:auto}
 .production-controls>.actions>.primary{font-size:12px;min-height:34px}
+.production-path li{padding:0}
+.production-path li .stage-step{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;min-height:44px;padding:10px 7px;border:0;border-radius:0;background:transparent;color:inherit;font-size:inherit;font-weight:inherit;white-space:nowrap}
+.production-path li .stage-step>span{border:1px solid currentColor;border-radius:50%;width:18px;height:18px;font-size:9px;display:grid;place-items:center;flex:none}
+.production-path li .stage-step:disabled{cursor:default;opacity:1}
+.production-path li .stage-step:not(:disabled):hover{background:#d5ece7;color:#07534f}
+.production-path li.current .stage-step{color:#fff}
+.production-path li .stage-step:focus-visible{outline:3px solid #155eef;outline-offset:-3px;position:relative;z-index:1}
+.stage-feedback{padding:0 16px 10px;font-weight:700;color:#176653}
+.stage-feedback[role=alert]{color:#a52c37}
 @media(max-width:600px){
   .production-path-header{align-items:stretch;flex-direction:column;padding:12px 12px 2px}
   .production-order-picker{align-items:stretch;flex-direction:column;gap:4px}

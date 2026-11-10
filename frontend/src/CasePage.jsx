@@ -35,7 +35,8 @@ export default function CasePage({ user, print = false }) {
     [finishResult, setFinishResult] = useState(null),
     [finishBusy, setFinishBusy] = useState(false),
     [attentionError, setAttentionError] = useState(null),
-    [attentionBusy, setAttentionBusy] = useState(false)
+    [attentionBusy, setAttentionBusy] = useState(false),
+    [completionNotice, setCompletionNotice] = useState('')
   useEffect(() => {
     const closeOnHistory = () => setModal((current) => current?.type === 'confirm_finished' ? null : current)
     window.addEventListener('popstate', closeOnHistory)
@@ -178,6 +179,7 @@ export default function CasePage({ user, print = false }) {
         <ArrowLeft size={16} />
         Volver a la bandeja
       </button>
+      {completionNotice && <div className="notice" role="status">{completionNotice}</div>}
       {user.roles.includes('Administrador') && <details className="secondary-actions"><summary>Más acciones</summary><button type="button" className="danger" onClick={() => setModal({type:'delete'})}>Eliminar definitivamente</button></details>}
       <CaseAttention
         record={c}
@@ -233,6 +235,8 @@ export default function CasePage({ user, print = false }) {
           record={c}
           isAdmin={user.roles.includes('Administrador')}
           onAdminStage={async stage=>{const result=await api(`/cases/${c.id}/production/admin-stage`,{method:'POST',body:{production_id:p.id,stage,version:c.version,key:uid()}});qc.setQueryData(['case',id,selectedProductionId],result);await invalidateCaseViews(qc,{caseId:c.id,clientId:c.client.id,counts:true});return result}}
+          onAdvanceStage={async stage=>{const result=await api(`/cases/${c.id}/production/stage`,{method:'POST',body:{production_id:p.id,stage,version:c.version,key:uid()}});qc.setQueryData(['case',id,selectedProductionId],result);await invalidateCaseViews(qc,{caseId:c.id,clientId:c.client.id,counts:true});return result}}
+          onRefresh={() => query.refetch()}
           canManage={production && c.lifecycle !== 'Completado'}
           onSelectProduction={selectProduction}
           onConfirmFinished={openFinishConfirmation}
@@ -719,8 +723,8 @@ export default function CasePage({ user, print = false }) {
           )}
         </aside>
       </div>
-      {modal?.type === 'operation' && <Operation {...modal} record={c} onClose={close} />}{' '}
-      {modal?.type === 'complete_delivery' && <CompleteDeliveryDialog record={c} orders={modal.orders} financial={finance || can(user, 'attention')} canCollect={finance} onClose={close} />}
+      {modal?.type === 'operation' && <Operation {...modal} record={c} onClose={close} onSaved={result => { if (result.lifecycle === 'Completado' && c.lifecycle !== 'Completado') setCompletionNotice(modal.path === 'payments' ? 'Pago registrado. Solicitud completada automáticamente' : 'Solicitud completada automáticamente') }} />}{' '}
+      {modal?.type === 'complete_delivery' && <CompleteDeliveryDialog record={c} orders={modal.orders} financial={finance || can(user, 'attention')} canCollect={finance} onClose={close} onCompleted={result => { if (result.lifecycle === 'Completado' && c.lifecycle !== 'Completado') setCompletionNotice('Entrega registrada. Solicitud completada automáticamente') }} />}
       {modal?.type === 'confirm_finished' && modal.caseId === c.id &&
         modal.productionId === p?.id && modal.selectionKey === selectedProductionId && (
         <FormDialog

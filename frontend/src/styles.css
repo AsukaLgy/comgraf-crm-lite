@@ -304,3 +304,13 @@ dialog .integrated-create-section .autocomplete{min-width:min(100%,280px)}
 .stage-metrics .metric{min-height:92px;padding:13px}
 @media(max-width:1100px){.stage-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:640px){.stage-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.choice-group{border:0;padding:0;margin:0;min-width:0}
+.choice-group legend{font-size:.84rem;font-weight:700;color:#34465a;margin-bottom:.45rem}
+.choice-options{display:flex;flex-wrap:wrap;gap:.55rem}
+.choice-option{display:inline-flex;align-items:center;gap:.6rem;min-height:2.75rem;padding:.5rem .85rem;border:1px solid #cbd6e0;border-radius:.55rem;background:#fff;cursor:pointer;position:relative;flex:1 1 9rem}
+.choice-option.selected{border-color:#126d70;background:#edf8f5;box-shadow:inset 0 0 0 1px #126d70}
+.choice-option:focus-within{outline:3px solid #3b82f6;outline-offset:2px}
+.choice-option input{position:absolute;opacity:0;width:1px;height:1px}
+.choice-mark{width:1.08rem;height:1.08rem;border:2px solid #65788c;border-radius:50%;flex:none;background:#fff}
+.choice-option.selected .choice-mark{border:5px solid #126d70}
+@media(max-width:600px){.choice-options{flex-direction:column}.choice-option{flex-basis:auto;width:100%}}

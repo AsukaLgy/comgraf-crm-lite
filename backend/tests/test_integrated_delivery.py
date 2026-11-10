@@ -28,10 +28,11 @@ def test_cash_full_collection_is_atomic_and_idempotent(clients):
     response, payload = delivery(api, case, payment_amount='1000.00', payment_reference='Recibo 1')
     delivered = must(response)
     assert delivered['delivery_status'] == 'Completa' and delivered['balance'] == '0.00'
-    assert delivered['lifecycle'] == 'Activo'
+    assert delivered['lifecycle'] == 'Completado' and delivered['status'] == 'Cerrado'
     assert len(delivered['deliveries']) == 1 and len(delivered['ledger']) == 2
     replay = must(api.post(f"/api/cases/{case['id']}/deliveries/complete", json=payload))
     assert len(replay['deliveries']) == 1 and len(replay['ledger']) == 2
+    assert len([event for event in replay['events'] if event['data'].get('action') == 'case_completed']) == 1
     assert api.post(f"/api/cases/{case['id']}/deliveries/complete", json={**payload, 'key': key(), 'version': replay['version']}).status_code == 409
 
 
@@ -119,15 +120,15 @@ def test_catalog_family_and_historical_mapping(clients):
     from app.schemas import ItemInput
     from app.cai import is_cai_product, uses_print_form
     from test_cai_forms import cai_item
-    for product in ('Recibos por honorarios (CAI)', 'Facturas (CAI)', 'Otros (CAI)', 'Talonarios y facturas'):
+    for product in ('Talonario CAI', 'Recibos por honorarios (CAI)', 'Facturas (CAI)', 'Otros (CAI)', 'Talonarios y facturas'):
         validated = ItemInput.model_validate(cai_item(product=product))
         assert uses_print_form(validated.product)
         assert is_cai_product(product) == (product != 'Talonarios y facturas')
     api = clients['admin']
     _, case = create(api, 'Producto histórico')
     order = mutate(api, case, 'convert', {**conversion(), 'items': [cai_item()]})
-    assert order['items'][0]['product'] == 'Facturas (CAI)'
-    assert order['production']['specs_snapshot']['items'][0]['product'] == 'Facturas (CAI)'
+    assert order['items'][0]['product'] == 'Talonario CAI'
+    assert order['production']['specs_snapshot']['items'][0]['product'] == 'Talonario CAI'
 
 
 def test_nonpersonal_creation_defaults_to_pool_and_extra_order_keeps_owner(clients, accounts):
@@ -175,3 +176,19 @@ def test_missing_credit_due_date_is_not_fabricated(clients):
     assert delivered['balance'] == '1000.00'
     assert not any(event['event_kind'] == 'payment_due' and event['production_id'] == case['production']['id']
                    for event in must(api.get('/api/calendar')))
+
+
+def test_delivery_and_payment_terms_accept_only_known_values_on_new_orders(clients):
+    api = clients['admin']
+    _, case = create(api, 'Opciones exclusivas')
+    for change in ({'delivery_method': 'Mensajero no acordado'}, {'payment_terms': 'Mixto'}):
+        response = api.post(f"/api/cases/{case['id']}/convert", json={**conversion(), **change,
+            'version': case['version'], 'key': key()})
+        assert response.status_code == 422
+    order = mutate(api, case, 'convert', {**conversion(), 'delivery_method': 'Entrega', 'payment_terms': 'Crédito'})
+    assert order['production']['delivery_method'] == 'Entrega'
+    assert order['production']['payment_terms'] == 'Crédito'
+    order = release_single_order(clients, order)
+    delivered = must(delivery(api, order, method='Entrega', balance_reason='Acuerdo de pago pendiente')[0])
+    assert delivered['deliveries'][0]['method'] == 'Entrega'
+    assert delivered['lifecycle'] == 'Activo'

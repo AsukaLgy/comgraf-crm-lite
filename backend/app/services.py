@@ -52,9 +52,13 @@ def finalize_case(db, case, actor_id, *, origin, action_trigger, regularization_
 def complete_resolved_production(db, case, user, action_trigger):
     """Automatic completion is evaluated only after an operation resolves real work."""
     productions = db.scalars(select(Production).where(Production.case_id == case.id)).all()
-    if case.lifecycle != 'Activo' or not productions:
+    if case.lifecycle != 'Activo' or not any(not production.cancelled_at for production in productions):
         return False
     if any(not production.cancelled_at and delivery_status(db, case.id, production.id) != 'Completa' for production in productions): return False
+    for production in productions:
+        resolve_paid_collection_followups(db, case, production, user)
+        if not production.cancelled_at:
+            resolve_delivered_pickup_followups(db, case, production, user)
     if case_completion_blockers(db, case, show_finances=True):
         return False
     return finalize_case(db, case, user.id if user else None, origin='automatic', action_trigger=action_trigger)
@@ -69,7 +73,7 @@ def historical_completion_candidates(db):
     candidates = []
     for case in cases:
         productions = db.scalars(select(Production).where(Production.case_id == case.id)).all()
-        if productions and all((p.cancelled_at and not p.cancellation_review_pending) or delivery_status(db, case.id, p.id) == 'Completa' for p in productions) and not case_completion_blockers(db, case, show_finances=True):
+        if any(not p.cancelled_at for p in productions) and all((p.cancelled_at and not p.cancellation_review_pending) or delivery_status(db, case.id, p.id) == 'Completa' for p in productions) and not case_completion_blockers(db, case, show_finances=True):
             candidates.append(case)
     return candidates
 
@@ -83,8 +87,14 @@ def regularize_historical_completions(db, regularization_run=None):
         db.refresh(case, with_for_update=True)
         if case.lifecycle != 'Activo' or case.status != 'Abierto':
             continue
+        productions = db.scalars(select(Production).where(Production.case_id == case.id)).all()
+        if not any(not production.cancelled_at for production in productions):
+            continue
         if case_completion_blockers(db, case, show_finances=True):
             continue
+        for production in productions:
+            resolve_paid_collection_followups(db, case, production, None)
+            resolve_delivered_pickup_followups(db, case, production, None)
         case.version += 1
         if finalize_case(db, case, None, origin='historical_regularization',
                 action_trigger='regularize_resolved_production', regularization_run=run_id):
@@ -186,6 +196,9 @@ def complete_case(db, user, case_id, data):
     case, changed = mutation(db, user, case_id, data, 'case_complete', 'attention', allow_completed=True)
     if not changed: return case
     if case.lifecycle == 'Completado': fail('La solicitud ya está completada', 409)
+    for production in db.scalars(select(Production).where(Production.case_id == case.id)):
+        resolve_paid_collection_followups(db, case, production, user)
+        resolve_delivered_pickup_followups(db, case, production, user)
     blockers = case_completion_blockers(db, case, show_finances=True)
     if blockers: fail('No se puede completar la solicitud: ' + ' '.join(blockers), 409)
     finalize_case(db, case, user.id, origin='manual', action_trigger='manual_completion')
@@ -423,8 +436,10 @@ def convert(db, user, case_id, data, *, permission='attention'):
     for registered in db.scalars(select(Contact).where(Contact.client_id == client.id)):
         if registered.phone: allowed_phones.add(registered.phone)
         if registered.email: allowed_emails.add(registered.email)
-    phone = data.phone or (contact.phone if contact and contact.phone else (next(iter(allowed_phones)) if len(allowed_phones) == 1 else ''))
-    email = data.email or (contact.email if contact and contact.email else (next(iter(allowed_emails)) if len(allowed_emails) == 1 else ''))
+    general_phones = list(dict.fromkeys(client.phones or []))
+    general_emails = list(dict.fromkeys(client.emails or []))
+    phone = data.phone or (contact.phone if contact and contact.phone else (general_phones[0] if len(general_phones) == 1 else ''))
+    email = data.email or (contact.email if contact and contact.email else (general_emails[0] if len(general_emails) == 1 else ''))
     if phone and phone not in allowed_phones: fail('Selecciona un teléfono registrado del cliente')
     if email and email not in allowed_emails: fail('Selecciona un correo registrado del cliente')
     client_snapshot = {
@@ -899,6 +914,7 @@ def cancel(db, user, case_id, data):
         'economic_status': 'resolved' if not production.cancellation_review_pending else 'review_pending',
         'final_amount': str(production.cancellation_final_amount) if production.cancellation_final_amount is not None else None,
         'adjustment': str(totals.get('adjustment', Decimal('0')))})
+    complete_resolved_production(db, case, user, 'cancellation_resolved')
     return case
 
 
@@ -912,6 +928,7 @@ def resolve_cancellation_request(db, user, case_id, data):
     if delivery_status(db, case.id, production.id) == 'Completa':
         fail('La orden está completamente entregada; registra una devolución o reclamo por separado', 409)
     resolve_cancellation(db, user, case, production, data)
+    complete_resolved_production(db, case, user, 'cancellation_resolved')
     return case
 
 
@@ -971,6 +988,7 @@ def refund(db, user, case_id, data):
         reference=data.reference, reason='Devolución realizada y confirmada por el usuario', actor_id=user.id))
     event(db, case, user, f'Devolución registrada: {data.amount} {production.currency}. {data.reference}',
         data={'action': 'refund', 'amount': str(data.amount), 'reference': data.reference, 'actor_id': user.id})
+    complete_resolved_production(db, case, user, 'refund')
     return case
 
 
@@ -1067,13 +1085,8 @@ def deliver_complete(db, user, case_id, data):
               data={'financial': True, 'action': 'delivery_collection', 'production_id': production.id,
                     'payment_amount': str(data.payment_amount) if data.payment_amount is not None else None,
                     'balance_reason': balance_reason if remaining_balance > 0 else None})
-    pickup_tasks = db.scalars(select(Task).where(Task.case_id == case.id, Task.production_id == production.id,
-                                                   Task.category == 'PICKUP', Task.done_at.is_(None))).all()
-    for task in pickup_tasks: task.done_at = delivered_at
-    if pickup_tasks:
-        event(db, case, user, 'Seguimiento de recogida resuelto por entrega completa',
-              data={'action': 'pickup_followup_resolved', 'task_ids': [task.id for task in pickup_tasks], 'origin': 'automatic'})
-    # La entrega y su cobro comparten la transacción del request; atención se cierra aparte.
+    resolve_delivered_pickup_followups(db, case, production, user)
+    complete_resolved_production(db, case, user, 'delivery_collection' if data.payment_amount is not None else 'delivery_completed')
     return case
 
 
@@ -1086,6 +1099,7 @@ def pay(db, user, case_id, data):
     db.flush()
     resolve_paid_collection_followups(db, case, production, user)
     event(db, case, user, f'{data.kind} OP-{production.id:05d}: {data.amount} {production.currency}. {data.reference}', data={'financial': True, 'action': 'payment', 'production_id': production.id})
+    complete_resolved_production(db, case, user, 'payment')
     return case
 
 
@@ -1099,7 +1113,24 @@ def adjust(db, user, case_id, data):
     db.flush()
     resolve_paid_collection_followups(db, case, production, user)
     event(db, case, user, f'Ajuste OP-{production.id:05d}: {data.amount} {production.currency}. {data.reason}', data={'financial': True, 'production_id': production.id})
+    complete_resolved_production(db, case, user, 'adjustment')
     return case
+
+
+def resolve_delivered_pickup_followups(db, case, production, user):
+    if delivery_status(db, case.id, production.id) != 'Completa':
+        return 0
+    tasks = db.scalars(select(Task).where(Task.case_id == case.id, Task.production_id == production.id,
+        Task.category == 'PICKUP', Task.done_at.is_(None)).with_for_update()).all()
+    if not tasks:
+        return 0
+    closed_at = now()
+    for task in tasks:
+        task.done_at = closed_at
+    event(db, case, user, f'Seguimientos de recogida resueltos por entrega completa de OP-{production.id:05d}',
+        data={'action': 'pickup_followup_resolved', 'production_id': production.id,
+              'task_ids': [task.id for task in tasks], 'origin': 'automatic'})
+    return len(tasks)
 
 
 def resolve_paid_collection_followups(db, case, production, user):

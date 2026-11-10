@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 from .password_policy import PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH
-from .cai import LEGACY_CAI_PRODUCT, NEW_PRODUCTS, uses_print_form
+from .cai import LEGACY_CAI_PRODUCTS, MAX_GAMES_PER_PAD, NEW_PRODUCTS, uses_print_form
 
 Money = Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
 Quantity = Annotated[Decimal, Field(gt=0, max_digits=14, decimal_places=3)]
@@ -25,6 +25,9 @@ PREVIOUS_STAGES = {
     'READY': {'NEW', 'APPROVAL', 'PRINTING', 'WORKSHOP'},
 }
 Product = str
+DELIVERY_METHODS = ('Retiro en local', 'Entrega')
+LEGACY_DELIVERY_METHODS = ('Retiro en taller', 'Entrega (delivery)')
+PAYMENT_TERMS = ('Contado', 'Crédito')
 
 
 class Input(BaseModel):
@@ -188,7 +191,7 @@ class Specs(Input):
     finishes: str = Field(default='', max_length=300)
     detail: str = Field(default='', max_length=3000)
     cai_format: Literal['Media carta', 'Cuarto de carta', '8.5 × 7.25', '8.5 × 8.5', 'Carta'] | None = None
-    games_per_pad: Literal[25, 50] | None = None
+    games_per_pad: int | None = Field(default=None, strict=True, ge=1, le=MAX_GAMES_PER_PAD)
     paper_type: Literal['Bond', 'Químico'] | None = None
     additional_copies: Literal[1, 2, 3] | None = None
     cai_binding: Literal['Engrapado', 'Pegado', 'Hojas sueltas'] | None = None
@@ -205,7 +208,7 @@ class ItemInput(Input):
     @field_validator('product')
     @classmethod
     def known_product(cls, value):
-        if value not in NEW_PRODUCTS and value != LEGACY_CAI_PRODUCT:
+        if value not in NEW_PRODUCTS and value not in LEGACY_CAI_PRODUCTS:
             raise ValueError('Selecciona un producto del catálogo')
         return value
 
@@ -229,6 +232,12 @@ class QuoteInput(Mutation):
     currency: Literal['HNL'] = 'HNL'
     valid_until: date
 
+    @model_validator(mode='after')
+    def current_catalog(self):
+        if any(item.product not in NEW_PRODUCTS for item in self.items):
+            raise ValueError('Las nuevas cotizaciones deben usar el catálogo vigente')
+        return self
+
 
 class QuoteDecision(Mutation):
     status: Literal['Aceptada', 'Rechazada']
@@ -244,11 +253,18 @@ class Conversion(Mutation):
     payment_terms: Literal['Contado', 'Crédito'] = 'Contado'
     advance_required: Money = Decimal('0')
     payment_due_date: date | None = None
-    delivery_method: str = Field(min_length=1, max_length=120)
+    delivery_method: str = Field(default=DELIVERY_METHODS[0], min_length=1, max_length=120)
     instructions: str = Field(default='', max_length=10000)
     contact_id: int | None = Field(default=None, ge=1)
     phone: str = Field(default='', max_length=60)
     email: str = Field(default='', max_length=180)
+
+    @field_validator('delivery_method')
+    @classmethod
+    def known_delivery_method(cls, value):
+        if value not in DELIVERY_METHODS + LEGACY_DELIVERY_METHODS:
+            raise ValueError('Selecciona Retiro en local o Entrega')
+        return value
 
 
 class ProductionRequestInput(Conversion):
@@ -339,7 +355,7 @@ class DeliveryWithPaymentInput(DeliveryInput):
 
 class CompleteDeliveryInput(Mutation):
     production_id: int = Field(ge=1)
-    method: Literal['Retiro en local', 'Entrega (delivery)']
+    method: Literal['Retiro en local', 'Entrega', 'Retiro en taller', 'Entrega (delivery)']
     receiver: str = Field(default='', max_length=180)
     evidence: str = Field(default='', max_length=3000)
     payment_amount: Annotated[Decimal, Field(gt=0, max_digits=14, decimal_places=2)] | None = None

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check } from 'lucide-react'
 import { Badge } from './components'
 import {
@@ -10,8 +10,9 @@ import {
 
 const reason = { name: 'reason', label: 'Motivo del reclamo', type: 'textarea', required: true }
 
-export default function ProductionStages({ record, canManage, isAdmin, onAdminStage, onSelectProduction, onConfirmFinished, confirmBusy, onSchedule, onDelivery, operation }) {
-  const [adminBusy,setAdminBusy]=useState(false),[adminError,setAdminError]=useState('')
+export default function ProductionStages({ record, canManage, isAdmin, onAdminStage, onAdvanceStage, onRefresh, onSelectProduction, onConfirmFinished, confirmBusy, onSchedule, onDelivery, operation }) {
+  const [stageBusy,setStageBusy]=useState(false),[stageError,setStageError]=useState(''),[stageMessage,setStageMessage]=useState('')
+  const changing = useRef(false)
   const production = record.production
   const currentIndex = PRODUCTION_STAGES.indexOf(production.stage)
   const next = PRODUCTION_NEXT_STAGE[production.stage]
@@ -27,6 +28,46 @@ export default function ProductionStages({ record, canManage, isAdmin, onAdminSt
       [PRODUCTION_STAGE.PRINTING, PRODUCTION_STAGE.WORKSHOP].includes(order.stage) &&
       !order.classification_required)) : []
   const visited = new Set([production.stage])
+  useEffect(() => {
+    if (!stageMessage) return undefined
+    const timeout = window.setTimeout(() => setStageMessage(''), 2500)
+    return () => window.clearTimeout(timeout)
+  }, [stageMessage])
+  function unavailableReason(stage) {
+    if (stage === production.stage) return 'Etapa actual; no se registrará otro cambio.'
+    if (!canManage) return 'No tienes permiso para cambiar esta OP.'
+    if (production.cancelled_at) return 'La OP está anulada.'
+    if (production.blocked_since) return 'Resuelve el bloqueo antes de cambiar la etapa.'
+    if (record.delivery_status !== 'Pendiente') return 'La OP tiene entregas registradas.'
+    if (production.classification_required && !isAdmin) return 'Clasifica la etapa histórica antes de continuar.'
+    if (isAdmin) return ''
+    if (stage === PRODUCTION_STAGE.READY) return 'Confirma el trabajo terminado con el QR o en el CRM; se aplicarán las reglas del grupo.'
+    if (stage !== next && !previous.includes(stage)) return 'Solo puedes avanzar a la etapa siguiente o registrar un reclamo a una etapa anterior.'
+    return ''
+  }
+  async function chooseStage(stage) {
+    if (changing.current || unavailableReason(stage)) return
+    if (!isAdmin && previous.includes(stage)) {
+      operation('production/stage', `Registrar reclamo hacia ${PRODUCTION_STAGE_LABELS[stage]}`,
+        [reason], {stage}, undefined, 'Registrar reclamo')
+      return
+    }
+    changing.current = true
+    setStageBusy(true)
+    setStageError('')
+    setStageMessage('Guardando etapa…')
+    try {
+      await (isAdmin ? onAdminStage(stage) : onAdvanceStage(stage))
+      setStageMessage('Etapa guardada')
+    } catch (error) {
+      setStageError(error.message)
+      setStageMessage('')
+      await onRefresh?.()
+    } finally {
+      changing.current = false
+      setStageBusy(false)
+    }
+  }
   for (const event of record.events || []) {
     if (event.data?.production_id !== production.id && !(record.production_count === 1 && !event.data?.production_id)) continue
     if (event.data?.action === 'converted' && event.data.stage) visited.add(event.data.stage)
@@ -66,7 +107,7 @@ export default function ProductionStages({ record, canManage, isAdmin, onAdminSt
         {record.productions.length > 1 && (
           <label className="production-order-picker">
             <span>Cambiar OP</span>
-            <select aria-label="Orden de producción seleccionada" value={production.id}
+            <select aria-label="Orden de producción seleccionada" value={production.id} disabled={stageBusy}
               onChange={(event) => onSelectProduction(Number(event.target.value))}>
               {record.productions.map((order) => <option key={order.id} value={order.id}>
                 {order.order_number} · {order.stage_label || 'Pendiente de clasificación'}
@@ -74,32 +115,11 @@ export default function ProductionStages({ record, canManage, isAdmin, onAdminSt
             </select>
           </label>
         )}
-        {isAdmin && canManage && !production.cancelled_at && (
-          <div className="admin-stage-picker">
-            <label htmlFor="admin-stage">Cambiar etapa de {production.order_number}</label>
-            <select id="admin-stage" value={production.stage || ''}
-              disabled={adminBusy || Boolean(production.blocked_since) || record.delivery_status !== 'Pendiente'}
-              onChange={async (event) => {
-                setAdminBusy(true)
-                setAdminError('')
-                try { await onAdminStage(event.target.value) }
-                catch (error) { setAdminError(error.message) }
-                finally { setAdminBusy(false) }
-              }}>
-              {!production.stage && <option value="">Sin clasificar</option>}
-              {production.stage === PRODUCTION_STAGE.NEW && <option value="NEW" disabled>Nuevo</option>}
-              {PRODUCTION_STAGES.filter(stage => stage !== PRODUCTION_STAGE.NEW).map(stage =>
-                <option key={stage} value={stage}>{PRODUCTION_STAGE_LABELS[stage]}</option>)}
-            </select>
-            {adminBusy && <small>Actualizando…</small>}
-            {adminError && <small role="alert">{adminError}</small>}
-            {record.delivery_status !== 'Pendiente' && <small>La OP tiene entregas registradas; resuelve su situación de entrega antes de cambiar la etapa.</small>}
-            {production.blocked_since && <small>Resuelve el bloqueo antes de cambiar la etapa.</small>}
-          </div>
-        )}
       </div>
-      <ol aria-label="Etapas de producción">
-        {PRODUCTION_STAGES.map((stage, index) => (
+      <ol aria-label={`Etapas de producción de ${production.order_number}`}>
+        {PRODUCTION_STAGES.map((stage, index) => {
+          const reasonUnavailable = unavailableReason(stage)
+          return (
           <li
             key={stage}
             className={
@@ -110,13 +130,19 @@ export default function ProductionStages({ record, canManage, isAdmin, onAdminSt
                   : ''
             }
           >
-            <span>
-              {visited.has(stage) && stage !== production.stage ? <Check size={13} /> : index + 1}
-            </span>
-            {PRODUCTION_STAGE_LABELS[stage]}
+            <button type="button" className="stage-step" disabled={Boolean(reasonUnavailable) || stageBusy}
+              title={reasonUnavailable || `Cambiar ${production.order_number} a ${PRODUCTION_STAGE_LABELS[stage]}`}
+              aria-label={`${PRODUCTION_STAGE_LABELS[stage]} de ${production.order_number}. ${reasonUnavailable || 'Cambiar etapa.'}`}
+              aria-current={stage === production.stage ? 'step' : undefined}
+              onClick={() => chooseStage(stage)}>
+              <span>{visited.has(stage) && stage !== production.stage ? <Check size={13} /> : index + 1}</span>
+              {PRODUCTION_STAGE_LABELS[stage]}
+            </button>
           </li>
-        ))}
+          )
+        })}
       </ol>
+      {(stageMessage || stageError) && <div className="stage-feedback" role={stageError ? 'alert' : 'status'}>{stageError || stageMessage}</div>}
 
       {production.classification_required && (
         <div className="notice">
@@ -181,92 +207,13 @@ export default function ProductionStages({ record, canManage, isAdmin, onAdminSt
                     >
                       Registrar entrega
                     </button>
-                    {previous.length > 0 && (
-                      <button
-                        disabled={record.delivery_status !== 'Pendiente'}
-                        title={
-                          record.delivery_status !== 'Pendiente'
-                            ? 'No se puede retroceder tras registrar entregas'
-                            : undefined
-                        }
-                        onClick={() =>
-                          operation(
-                            'production/stage',
-                            'Registrar reclamo',
-                            [
-                              {
-                                name: 'stage',
-                                label: 'Regresar a',
-                                options: previous.map((value) => ({
-                                  value,
-                                  label: PRODUCTION_STAGE_LABELS[value],
-                                })),
-                                required: true,
-                              },
-                              reason,
-                            ],
-                            { stage: previous.at(-1) },
-                            undefined,
-                            'Registrar reclamo',
-                          )
-                        }
-                      >
-                        Registrar reclamo
-                      </button>
-                    )}
                   </>
                 ) : confirmed && finishingStage ? (
                   <small>La entrega se habilita al completar el grupo de órdenes.</small>
                 ) : production.stage === PRODUCTION_STAGE.WORKSHOP ? (
                   <small>También puedes confirmar con el escáner QR.</small>
                 ) : (
-                  <>
-                    <button
-                      disabled={Boolean(production.blocked_since) || !next}
-                      title={
-                        production.blocked_since ? 'Resuelve el bloqueo para avanzar' : undefined
-                      }
-                      onClick={() =>
-                        operation(
-                          'production/stage',
-                          `Avanzar a ${PRODUCTION_STAGE_LABELS[next]}`,
-                          [],
-                          { stage: next },
-                          undefined,
-                          `Avanzar a ${PRODUCTION_STAGE_LABELS[next]}`,
-                        )
-                      }
-                    >
-                      {next ? `Avanzar a ${PRODUCTION_STAGE_LABELS[next]}` : 'Etapa final'}
-                    </button>
-                    {previous.length > 0 && (
-                      <button
-                        onClick={() =>
-                          operation(
-                            'production/stage',
-                            'Registrar reclamo',
-                            [
-                              {
-                                name: 'stage',
-                                label: 'Regresar a',
-                                options: previous.map((value) => ({
-                                  value,
-                                  label: PRODUCTION_STAGE_LABELS[value],
-                                })),
-                                required: true,
-                              },
-                              reason,
-                            ],
-                            { stage: previous.at(-1) },
-                            undefined,
-                            'Registrar reclamo',
-                          )
-                        }
-                      >
-                        Registrar reclamo
-                      </button>
-                    )}
-                  </>
+                  <small>Selecciona una etapa disponible en la barra para avanzar o registrar un reclamo.</small>
                 )}
                 <button
                   onClick={() =>

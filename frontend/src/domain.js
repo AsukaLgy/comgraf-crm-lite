@@ -30,9 +30,7 @@ export const CASE_PRIORITIES = Object.freeze(['Baja', 'Normal', 'Alta', 'Urgente
 export const PRODUCT = Object.freeze({
   BUSINESS_CARDS: 'Tarjetas de presentación',
   FORMS: 'Talonarios y facturas',
-  CAI_RECEIPTS: 'Recibos por honorarios (CAI)',
-  CAI_INVOICES: 'Facturas (CAI)',
-  CAI_OTHER: 'Otros (CAI)',
+  CAI: 'Talonario CAI',
   FLYERS: 'Volantes y flyers',
   NOTEBOOKS: 'Libretas y cuadernos',
   BANNERS: 'Banners y lonas',
@@ -40,12 +38,22 @@ export const PRODUCT = Object.freeze({
 })
 
 export const LEGACY_CAI_PRODUCT = 'Talonarios de factura CAI'
-export const CAI_PRODUCTS = Object.freeze([PRODUCT.CAI_RECEIPTS, PRODUCT.CAI_INVOICES, PRODUCT.CAI_OTHER, LEGACY_CAI_PRODUCT])
+export const LEGACY_CAI_PRODUCTS = Object.freeze(['Recibos por honorarios (CAI)', 'Facturas (CAI)', 'Otros (CAI)', LEGACY_CAI_PRODUCT])
+export const CAI_PRODUCTS = Object.freeze([PRODUCT.CAI, ...LEGACY_CAI_PRODUCTS])
 export const PRINT_FORM_PRODUCTS = Object.freeze([PRODUCT.FORMS, ...CAI_PRODUCTS])
 export const isCaiProduct = product => CAI_PRODUCTS.includes(product)
 export const usesPrintForm = product => PRINT_FORM_PRODUCTS.includes(product)
+export const newOrderProduct = product => LEGACY_CAI_PRODUCTS.includes(product) ? PRODUCT.CAI : product
 export const PRODUCTS = Object.freeze(Object.values(PRODUCT))
 export const PAYMENT_TERMS = Object.freeze(['Contado', 'Crédito'])
+export const PAYMENT_TERM_OPTIONS = Object.freeze(PAYMENT_TERMS.map(value => ({value, label:value})))
+export const DELIVERY_METHOD_OPTIONS = Object.freeze([
+  {value:'Retiro en local', label:'Retiro en local'},
+  {value:'Entrega', label:'Entrega'},
+])
+export const DEFAULT_DELIVERY_METHOD = DELIVERY_METHOD_OPTIONS[0].value
+export const deliveryMethodOptions = value => DELIVERY_METHOD_OPTIONS.some(option => option.value === value) || !value
+  ? DELIVERY_METHOD_OPTIONS : [...DELIVERY_METHOD_OPTIONS, {value, label:value}]
 export const HNL_CURRENCY = 'HNL'
 export const PASSWORD_MIN_LENGTH = 8
 export const PASSWORD_MAX_LENGTH = 200

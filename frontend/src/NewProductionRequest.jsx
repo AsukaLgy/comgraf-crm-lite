@@ -1,26 +1,25 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { api, money, uid } from './api'
-import { ErrorBox, Field, FormDialog, Select } from './components'
+import { ErrorBox, Field, FormDialog, RadioGroup, Select } from './components'
 import { ClientAutocomplete } from './NewCase'
 import { ItemsEditor, cleanItems, newItem } from './ProductForm'
-import { PAYMENT_TERMS } from './domain'
+import { DEFAULT_DELIVERY_METHOD, DELIVERY_METHOD_OPTIONS, PAYMENT_TERMS, PAYMENT_TERM_OPTIONS } from './domain'
 
 export default function NewProductionRequest({ user, onClose }) {
   const navigate = useNavigate(), qc = useQueryClient(), idempotency = useRef({ key: uid(), signature: '' }), [created, setCreated] = useState(null), [advancing, setAdvancing] = useState(false), [advanceError, setAdvanceError] = useState(null)
   const initial = {
-    client_id: '', contact_id: '', subject: '', priority: 'Normal', description: '',
+    client_id: '', subject: '', priority: 'Normal', description: '',
     items: [newItem()], requested_date: '', committed_date: '', payment_terms: PAYMENT_TERMS[0],
-    advance_required: '0', payment_due_date: '', delivery_method: 'Retiro en taller', instructions: '',
-    phone: '', email: '', quote_id: '',
+    advance_required: '0', payment_due_date: '', delivery_method: DEFAULT_DELIVERY_METHOD, instructions: '', quote_id: '',
   }
   async function save(v) {
     if (!v.client_id) throw new Error('Selecciona un cliente antes de guardar.')
     if (!v.subject.trim()) throw new Error('Escribe el asunto de la solicitud.')
     if (!v.items.length) throw new Error('Agrega al menos un producto.')
     const body = {
-      ...v, client_id: Number(v.client_id), contact_id: v.contact_id ? Number(v.contact_id) : null,
+      ...v, client_id: Number(v.client_id),
       priority: v.priority, currency: 'HNL', quote_id: null,
       items: cleanItems(v.items), requested_date: v.requested_date || null,
       committed_date: v.committed_date || null,
@@ -56,13 +55,11 @@ export default function NewProductionRequest({ user, onClose }) {
     <section className="integrated-create-section">
       <h3>Cliente y solicitud</h3>
       <div className="form-grid">
-        <ClientAutocomplete id="production-client" searchEndpoint="/production-clients" user={user} selectedId={v.client_id} onSelect={(client) => { set('client_id', String(client.id)); set('contact_id', ''); set('phone', ''); set('email', '') }} onClear={() => { set('client_id', ''); set('contact_id', ''); set('phone', ''); set('email', '') }} />
-        {v.client_id && <ContactPicker clientId={v.client_id} productionOnly={!user.permissions?.includes('*') && !user.permissions?.includes('clients')} value={v.contact_id} onChange={(value) => set('contact_id', value)} />}
+        <ClientAutocomplete id="production-client" searchEndpoint="/production-clients" user={user} selectedId={v.client_id} onSelect={(client) => set('client_id', String(client.id))} onClear={() => set('client_id', '')} />
         <Field label="Asunto" required value={v.subject} onChange={(e) => set('subject', e.target.value)} />
         <Select label="Prioridad" options={['Baja', 'Normal', 'Alta', 'Urgente']} value={v.priority} onChange={(e) => set('priority', e.target.value)} />
         <Field label="Descripción (opcional)" className="full"><textarea rows={3} value={v.description} onChange={(e) => set('description', e.target.value)} /></Field>
       </div>
-      <p className="muted">Tipo: Orden de producción · Se creará sin asignar en Pool general.</p>
     </section>
     <section className="integrated-create-section">
       <h3>Trabajo a producir</h3>
@@ -70,19 +67,13 @@ export default function NewProductionRequest({ user, onClose }) {
       <div className="form-grid">
         <Field label="Fecha solicitada" type="date" value={v.requested_date} onChange={(e) => set('requested_date', e.target.value)} />
         <Field label="Fecha comprometida" type="date" value={v.committed_date} onChange={(e) => set('committed_date', e.target.value)} />
-        <Select label="Condición de pago" options={PAYMENT_TERMS} value={v.payment_terms} onChange={(e) => set('payment_terms', e.target.value)} />
+        <RadioGroup label="Condición de pago" required options={PAYMENT_TERM_OPTIONS} value={v.payment_terms} onChange={(value) => set('payment_terms', value)} />
         <Field label="Anticipo requerido (HNL)" type="number" min="0" step="0.01" required value={v.advance_required} onChange={(e) => set('advance_required', e.target.value)} />
         <Field label="Vencimiento del saldo (si está acordado)" type="date" value={v.payment_due_date} onChange={(e) => set('payment_due_date', e.target.value)} />
-        <Field label="Modalidad de entrega" required value={v.delivery_method} onChange={(e) => set('delivery_method', e.target.value)} />
+        <RadioGroup label="Modalidad de entrega" required options={DELIVERY_METHOD_OPTIONS} value={v.delivery_method} onChange={(value) => set('delivery_method', value)} />
         <Field label="Instrucciones de taller" className="full"><textarea rows={3} value={v.instructions} onChange={(e) => set('instructions', e.target.value)} /></Field>
       </div>
       <p className="total">Total estimado <strong>{money(v.items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0), 0), 'HNL')}</strong></p>
     </section>
   </>} />
-}
-
-function ContactPicker({ clientId, value, onChange, productionOnly }) {
-  const path = productionOnly ? `/production-clients/${clientId}/contacts` : `/clients/${clientId}/contacts`
-  const result = useQuery({ queryKey: ['client-contacts', Number(clientId), productionOnly], queryFn: () => api(path) })
-  return <><Select label="Contacto" options={(result.data || []).map((contact) => ({ value: String(contact.id), label: contact.name }))} empty="Sin contacto específico" value={value} onChange={(e) => onChange(e.target.value)} /><ErrorBox error={result.error} /></>
 }

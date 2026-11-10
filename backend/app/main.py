@@ -95,7 +95,8 @@ async def http_error(request: Request, error: HTTPException):
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(request: Request, error: RequestValidationError):
-    details = error.errors()
+    details = [{key: value for key, value in issue.items() if key not in ('ctx', 'input', 'url')}
+               for issue in error.errors()]
     return JSONResponse({'detail': details, 'code': 'FIELD_VALIDATION'}, status_code=422)
 
 

@@ -1,9 +1,10 @@
 import { useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api, money, uid, date, localDate } from './api'
-import { Field, FormDialog, Select } from './components'
+import { Field, FormDialog, RadioGroup, Select } from './components'
+import { DEFAULT_DELIVERY_METHOD, DELIVERY_METHOD_OPTIONS } from './domain'
 
-export default function CompleteDeliveryDialog({ record, orders, financial, canCollect, onClose }) {
+export default function CompleteDeliveryDialog({ record, orders, financial, canCollect, onClose, onCompleted }) {
   const qc = useQueryClient()
   const key = useRef(uid())
   const signature = useRef(null)
@@ -33,7 +34,8 @@ export default function CompleteDeliveryDialog({ record, orders, financial, canC
     if (signature.current !== null && signature.current !== next) key.current = uid()
     signature.current = next
     try {
-      await api(`/cases/${record.id}/deliveries/complete`, { method: 'POST', body: { ...body, version: record.version, key: key.current } })
+      const result = await api(`/cases/${record.id}/deliveries/complete`, { method: 'POST', body: { ...body, version: record.version, key: key.current } })
+      onCompleted?.(result)
       await qc.invalidateQueries()
     } catch (error) {
       if (error.status === 409) await qc.invalidateQueries({ queryKey: ['case', String(record.id)] })
@@ -41,7 +43,7 @@ export default function CompleteDeliveryDialog({ record, orders, financial, canC
     }
   }
   return <FormDialog wide title="Registrar entrega de OP completa" onClose={onClose} onSave={save}
-    initial={{ production_id: String(first.id), method: 'Retiro en local', receiver: '', evidence: '', collection: canCollect && first.payment_terms !== 'Crédito' ? 'now' : 'later', payment_amount: first.balance || '', payment_reference: '', balance_reason: '' }}
+    initial={{ production_id: String(first.id), method: DEFAULT_DELIVERY_METHOD, receiver: '', evidence: '', collection: canCollect && first.payment_terms !== 'Crédito' ? 'now' : 'later', payment_amount: first.balance || '', payment_reference: '', balance_reason: '' }}
     submit={values => { const balance = orders.find(order => String(order.id) === String(values.production_id))?.balance; return !financial ? 'Registrar entrega' : balance !== null && Number(balance) <= 0 ? 'Registrar entrega (pagado)' : canCollect && Number(values.payment_amount) > 0 && values.collection === 'now' ? 'Entregar y registrar cobro' : 'Registrar entrega con saldo pendiente' }}
     render={(values, set) => {
       const selected = orders.find(order => String(order.id) === String(values.production_id)) || first
@@ -60,7 +62,7 @@ export default function CompleteDeliveryDialog({ record, orders, financial, canC
         }} />}
         <p className="notice">Se entregará completa {selected.order_number}. La fecha y hora se guardarán automáticamente.</p>
         <div className="form-grid">
-          <Select label="Modalidad" options={['Retiro en local', { value: 'Entrega (delivery)', label: 'Entrega a domicilio' }]} value={values.method} onChange={event => set('method', event.target.value)} />
+          <RadioGroup label="Modalidad de entrega" required options={DELIVERY_METHOD_OPTIONS} value={values.method} onChange={value => set('method', value)} />
           <Field label="Recibido por (opcional)" value={values.receiver} onChange={event => set('receiver', event.target.value)} />
           <Field label="Evidencia / referencia (opcional)" className="full"><textarea value={values.evidence} onChange={event => set('evidence', event.target.value)} /></Field>
         </div>
