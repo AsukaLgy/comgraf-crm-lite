@@ -154,7 +154,7 @@ export default function App() {
   const user = me.data
   const links = [
     ['/', 'Mi día', LayoutDashboard],
-    ['/inbox/pool', 'Pool general', InboxIcon],
+    ['/inbox/pool', 'Bandeja general', InboxIcon],
     ['/inbox/mine', 'Mis solicitudes', FolderOpen],
     ...(can(user, 'clients') ? [['/clients', 'Clientes', Users]] : []),
     ['/inbox/production', 'Producción', Printer],

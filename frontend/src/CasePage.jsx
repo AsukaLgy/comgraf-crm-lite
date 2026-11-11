@@ -23,7 +23,7 @@ import OrderQRCode from './OrderQRCode'
 import DeliveryFinance from './DeliveryFinance'
 import CompleteDeliveryDialog from './CompleteDeliveryDialog'
 import ProductionStages from './ProductionStages'
-import { HNL_CURRENCY } from './domain'
+import { HNL_CURRENCY, isCaiProduct } from './domain'
 import DeleteDialog from './DeleteDialog'
 import { invalidateCaseViews } from './caseCache'
 const reason = { name: 'reason', label: 'Motivo', type: 'textarea', required: true }
@@ -394,6 +394,8 @@ export default function CasePage({ user, print = false }) {
                         <summary>
                           {i.product} · {quantity(i.quantity)} {i.unit} ·{' '}
                           {money(i.unit_price, q.currency)} / unidad
+                          {isCaiProduct(i.product) &&
+                            ` · Tipo de documento fiscal: ${i.specs?.fiscal_document_type || 'No especificado'}`}
                         </summary>
                         <Specifications specs={i.specs} product={i.product} />
                       </details>

@@ -131,6 +131,12 @@ export default function CasePrintSheet({ id, record, person, preview = false }) 
                 {production.order_number} · Producto {index + 1} · {item.product}
               </h3>
               <dl>
+                {isCaiProduct(item.product) && (
+                  <div className="fiscal-document-spec">
+                    <dt>Tipo de documento fiscal:</dt>
+                    <dd>{specs.fiscal_document_type || 'No especificado'}</dd>
+                  </div>
+                )}
                 <div>
                   <dt>Formato</dt>
                   <dd>

@@ -121,7 +121,10 @@ def test_catalog_family_and_historical_mapping(clients):
     from app.cai import is_cai_product, uses_print_form
     from test_cai_forms import cai_item
     for product in ('Talonario CAI', 'Recibos por honorarios (CAI)', 'Facturas (CAI)', 'Otros (CAI)', 'Talonarios y facturas'):
-        validated = ItemInput.model_validate(cai_item(product=product))
+        value = cai_item(product=product)
+        if product == 'Talonarios y facturas':
+            value['specs'] = {key: part for key, part in value['specs'].items() if key != 'fiscal_document_type'}
+        validated = ItemInput.model_validate(value)
         assert uses_print_form(validated.product)
         assert is_cai_product(product) == (product != 'Talonarios y facturas')
     api = clients['admin']

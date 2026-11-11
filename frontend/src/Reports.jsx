@@ -181,7 +181,7 @@ export function Indicators() {
             label="Solicitudes sin asignar"
             value={c.unassigned_cases}
             to="/inbox/pool"
-            description="Abrir Pool general"
+            description="Abrir Bandeja general"
           />
           <MetricLink
             label="Solicitudes que requieren acción"

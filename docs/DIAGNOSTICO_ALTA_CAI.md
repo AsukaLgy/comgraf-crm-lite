@@ -22,7 +22,7 @@ El proceso local encontrado en el puerto 8000 había arrancado antes de los comm
 
 ## Reparación y comprobación
 
-- El catálogo vigente reconoce Talonario CAI; `CATALOG_REVISION = 2` se expone en `/api/version`. La interfaz comprueba esa revisión antes de enviar un producto CAI y explica cuándo hay que reiniciar el proceso local.
+- El catálogo vigente reconoce Talonario CAI; `/api/version` expone su revisión. Desde la selección obligatoria del tipo fiscal es `CATALOG_REVISION = 3`. La interfaz comprueba esa revisión antes de enviar un producto CAI y explica cuándo hay que reiniciar el proceso local.
 - El manejador de validación elimina `ctx`, `input` y `url` antes de construir JSON. Los errores internos tienen identificador de incidencia y traceback en el log; la respuesta no expone detalles internos.
 - La fila nueva cambia a **1 talonario** al entrar en la familia de impresión. Una cantidad editada o cargada se conserva; el servidor sigue rechazando cero, fracciones y campos vacíos.
 - La creación conserva la clave de idempotencia al reintentar los mismos datos. Una prueba interrumpió solo la respuesta después de que MySQL guardara: el reintento devolvió los mismos ID y una sola OP.
@@ -32,4 +32,4 @@ La matriz de navegador incluyó cliente existente y alta rápida, juegos 10/25/5
 
 ## Aplicación local
 
-Usa Node 24.11.1 (`frontend/.node-version`) para `npm ci --ignore-scripts`, pruebas y build. Antes de iniciar la aplicación con una base local, confirma `MYSQL_DATABASE` y el estado de Alembic; la base de pruebas utilizada estaba en `018_optional_payment_due` sin operaciones pendientes. Reinicia el proceso Python local después de actualizar el código: los módulos cargados por un proceso anterior no cambian al compilar el frontend. Comprueba después que `/api/version` incluya `catalog_revision: 2`. Este procedimiento no requiere una migración nueva ni un despliegue remoto.
+Usa Node 24.11.1 (`frontend/.node-version`) para `npm ci --ignore-scripts`, pruebas y build. Antes de iniciar la aplicación con una base local, confirma `MYSQL_DATABASE` y el estado de Alembic; la base de pruebas utilizada estaba en `018_optional_payment_due` sin operaciones pendientes. Reinicia el proceso Python local después de actualizar el código: los módulos cargados por un proceso anterior no cambian al compilar el frontend. Comprueba después que `/api/version` incluya `catalog_revision: 3`. Este procedimiento no requiere una migración nueva ni un despliegue remoto.

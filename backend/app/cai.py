@@ -12,9 +12,20 @@ MAX_GAMES_PER_PAD = 10000
 CAI_PAPERS = {'Bond', 'Químico'}
 CAI_COPIES = {1, 2, 3}
 CAI_BINDINGS = {'Engrapado', 'Pegado', 'Hojas sueltas'}
+FISCAL_DOCUMENT_TYPES = (
+    'Factura',
+    'Factura prevalorada',
+    'Recibo por honorarios profesionales',
+    'Boleta de compra',
+    'Constancia de donación',
+    'Nota de crédito',
+    'Nota de débito',
+    'Guía de remisión',
+    'Comprobante de retención',
+)
 LEGACY_CAI_PRODUCT = 'Talonarios de factura CAI'
 CAI_PRODUCT = 'Talonario CAI'
-CATALOG_REVISION = 2
+CATALOG_REVISION = 3
 LEGACY_CAI_PRODUCTS = frozenset({'Recibos por honorarios (CAI)', 'Facturas (CAI)', 'Otros (CAI)', LEGACY_CAI_PRODUCT})
 CAI_PRODUCTS = LEGACY_CAI_PRODUCTS | {CAI_PRODUCT}
 PRINT_FORM_PRODUCTS = CAI_PRODUCTS | {'Talonarios y facturas'}

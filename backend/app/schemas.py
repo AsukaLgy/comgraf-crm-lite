@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 from .password_policy import PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH
-from .cai import LEGACY_CAI_PRODUCTS, MAX_GAMES_PER_PAD, NEW_PRODUCTS, uses_print_form
+from .cai import FISCAL_DOCUMENT_TYPES, LEGACY_CAI_PRODUCTS, MAX_GAMES_PER_PAD, NEW_PRODUCTS, is_cai_product, uses_print_form
 
 Money = Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
 Quantity = Annotated[Decimal, Field(gt=0, max_digits=14, decimal_places=3)]
@@ -195,6 +195,14 @@ class Specs(Input):
     paper_type: Literal['Bond', 'Químico'] | None = None
     additional_copies: Literal[1, 2, 3] | None = None
     cai_binding: Literal['Engrapado', 'Pegado', 'Hojas sueltas'] | None = None
+    fiscal_document_type: str | None = None
+
+    @field_validator('fiscal_document_type')
+    @classmethod
+    def known_fiscal_document_type(cls, value):
+        if value is not None and value not in FISCAL_DOCUMENT_TYPES:
+            raise ValueError('Selecciona un tipo de documento fiscal válido')
+        return value
 
 
 # ---- Cotización y conversión a una orden activa ----
@@ -222,8 +230,14 @@ class ItemInput(Input):
                 raise ValueError('La cantidad de talonarios debe ser un entero positivo')
             if any(getattr(self.specs, name) is None for name in cai_fields):
                 raise ValueError('Completa formato, juegos, papel, copias y encuadernación')
+            if is_cai_product(self.product) and self.specs.fiscal_document_type is None:
+                raise ValueError('Selecciona el tipo de documento fiscal')
+            if not is_cai_product(self.product) and self.specs.fiscal_document_type is not None:
+                raise ValueError('El tipo de documento fiscal solo se permite para Talonario CAI')
         elif any(getattr(self.specs, name) is not None for name in cai_fields):
             raise ValueError('Estas especificaciones solo se permiten para productos con formulario de talonarios')
+        elif self.specs.fiscal_document_type is not None:
+            raise ValueError('El tipo de documento fiscal solo se permite para Talonario CAI')
         return self
 
 

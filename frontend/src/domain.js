@@ -45,6 +45,17 @@ export const LEGACY_CAI_PRODUCTS = Object.freeze([
   LEGACY_CAI_PRODUCT,
 ])
 export const CAI_PRODUCTS = Object.freeze([PRODUCT.CAI, ...LEGACY_CAI_PRODUCTS])
+export const FISCAL_DOCUMENT_TYPES = Object.freeze([
+  'Factura',
+  'Factura prevalorada',
+  'Recibo por honorarios profesionales',
+  'Boleta de compra',
+  'Constancia de donación',
+  'Nota de crédito',
+  'Nota de débito',
+  'Guía de remisión',
+  'Comprobante de retención',
+])
 export const PRINT_FORM_PRODUCTS = Object.freeze([PRODUCT.FORMS, ...CAI_PRODUCTS])
 export const isCaiProduct = (product) => CAI_PRODUCTS.includes(product)
 export const usesPrintForm = (product) => PRINT_FORM_PRODUCTS.includes(product)

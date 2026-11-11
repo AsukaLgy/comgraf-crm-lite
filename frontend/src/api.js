@@ -15,6 +15,7 @@ const FIELD_NAMES = {
   paper_type: 'Tipo de papel',
   additional_copies: 'Número de copias',
   cai_binding: 'Encuadernación',
+  fiscal_document_type: 'Tipo de documento fiscal',
   payment_terms: 'Condición de pago',
   delivery_method: 'Modalidad de entrega',
   requested_date: 'Fecha solicitada',
@@ -154,7 +155,7 @@ export async function api(path, options = {}) {
     const version = await assertContract()
     if (
       body?.items?.some((item) => item.product === PRODUCT.CAI) &&
-      version.catalog_revision !== 2
+      version.catalog_revision !== 3
     ) {
       throw makeError(
         'El servidor local todavía usa un catálogo anterior. Reinicia el proceso local antes de crear Talonario CAI.',

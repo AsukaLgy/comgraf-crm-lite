@@ -118,6 +118,7 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
           paper_type: 'Químico',
           additional_copies: 2,
           cai_binding: 'Engrapado',
+          fiscal_document_type: 'Factura',
           detail: 'Original y copias',
         },
       },

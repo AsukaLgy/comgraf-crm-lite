@@ -52,6 +52,7 @@ test('CAI presenta etiquetas y pulgadas sin añadir cálculos a la hoja impresa'
           paper_type: 'Químico',
           additional_copies: 2,
           cai_binding: 'Engrapado',
+          fiscal_document_type: 'Factura',
           detail: 'Prueba visual',
         },
       },
@@ -100,4 +101,19 @@ test('CAI presenta etiquetas y pulgadas sin añadir cálculos a la hoja impresa'
     expect(response.headers()['content-type']).toContain('image/png')
   }
   expect(errors).toEqual([])
+
+  await page.route(`**/api/cases/${record.id}*`, async (route) => {
+    const response = await route.fetch()
+    const historical = await response.json()
+    historical.items[0].specs = { ...historical.items[0].specs }
+    delete historical.items[0].specs.fiscal_document_type
+    historical.production.specs_snapshot.items[0].specs = {
+      ...historical.production.specs_snapshot.items[0].specs,
+    }
+    delete historical.production.specs_snapshot.items[0].specs.fiscal_document_type
+    await route.fulfill({ response, json: historical })
+  })
+  await page.reload()
+  await expect(page.locator('.cai-print .fiscal-document-spec')).toContainText('No especificado')
+  await expect(page.getByRole('img', { name: /QR estable de la orden/ })).toBeVisible()
 })

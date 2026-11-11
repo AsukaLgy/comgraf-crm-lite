@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
 import { api, can, uid, localDate, money } from './api'
@@ -11,6 +11,8 @@ import {
   DELIVERY_METHOD_OPTIONS,
   DEFAULT_DELIVERY_METHOD,
   HNL_CURRENCY,
+  FISCAL_DOCUMENT_TYPES,
+  isCaiProduct,
   usesPrintForm,
   newOrderProduct,
 } from './domain'
@@ -51,7 +53,10 @@ const itemDefaults = (product) =>
 export const newItem = (product = PRODUCT.BUSINESS_CARDS) => ({
   product,
   ...itemDefaults(product),
-  specs: { ...itemDefaults(product).specs },
+  specs: {
+    ...itemDefaults(product).specs,
+    ...(isCaiProduct(product) ? { fiscal_document_type: '' } : {}),
+  },
   unit_price: '0',
   quantity_is_default: true,
 })
@@ -59,7 +64,10 @@ export function changeItemProduct(item, product) {
   if (item.product === product) return item
   const wasPrint = usesPrintForm(item.product),
     isPrint = usesPrintForm(product)
-  if (wasPrint === isPrint) return { ...item, product }
+  const specs = { ...item.specs }
+  if (!isCaiProduct(product)) delete specs.fiscal_document_type
+  else if (!isCaiProduct(item.product)) specs.fiscal_document_type = ''
+  if (wasPrint === isPrint) return { ...item, product, specs }
   const defaults = itemDefaults(product)
   if (isPrint)
     return {
@@ -67,9 +75,8 @@ export function changeItemProduct(item, product) {
       product,
       quantity: item.quantity_is_default ? defaults.quantity : item.quantity,
       unit: defaults.unit,
-      specs: { ...item.specs, ...defaults.specs },
+      specs: { ...specs, ...defaults.specs },
     }
-  const specs = { ...item.specs }
   for (const key of [
     'cai_format',
     'games_per_pad',
@@ -104,25 +111,73 @@ const SPEC_LABELS = {
   paper_type: 'Tipo de papel',
   additional_copies: 'Número de copias',
   cai_binding: 'Tipo de encuadernación',
+  fiscal_document_type: 'Tipo de documento fiscal',
 }
 export function Specifications({ specs, product }) {
   const cai = usesPrintForm(product) || Boolean(specs?.cai_format)
+  const entries = Object.entries(specs || {}).filter(
+    ([k, v]) =>
+      v !== null &&
+      v !== '' &&
+      !(cai && k === 'measure_unit') &&
+      (k !== 'fiscal_document_type' || isCaiProduct(product)),
+  )
+  if (isCaiProduct(product) && !specs?.fiscal_document_type)
+    entries.unshift(['fiscal_document_type', 'No especificado'])
   return (
     <dl className="specs">
-      {Object.entries(specs || {})
-        .filter(([k, v]) => v !== null && v !== '' && !(cai && k === 'measure_unit'))
-        .map(([k, v]) => (
-          <div key={k}>
-            <dt>{SPEC_LABELS[k] || k}</dt>
-            <dd>
-              {cai && k === 'cai_format' && CAI_DIMENSIONS[v]
-                ? `${v} (${CAI_DIMENSIONS[v]} pulgadas)`
-                : v}
-            </dd>
-          </div>
-        ))}
+      {entries.map(([k, v]) => (
+        <div key={k}>
+          <dt>{SPEC_LABELS[k] || k}</dt>
+          <dd>
+            {cai && k === 'cai_format' && CAI_DIMENSIONS[v]
+              ? `${v} (${CAI_DIMENSIONS[v]} pulgadas)`
+              : v}
+          </dd>
+        </div>
+      ))}
     </dl>
   )
+}
+
+function FiscalDocumentField({ value, onChange, label = 'Tipo de documento fiscal' }) {
+  const errorId = useId()
+  const [invalid, setInvalid] = useState(false)
+  return (
+    <div className="fiscal-document-field">
+      <Select
+        label={label}
+        required
+        empty="Seleccioná el tipo de documento fiscal"
+        options={FISCAL_DOCUMENT_TYPES}
+        value={value || ''}
+        aria-invalid={invalid || undefined}
+        aria-describedby={invalid ? errorId : undefined}
+        onInvalid={() => setInvalid(true)}
+        onChange={(e) => {
+          setInvalid(false)
+          onChange(e.target.value)
+        }}
+      />
+      {invalid && (
+        <small id={errorId} className="field-error" role="alert">
+          Seleccioná un tipo de documento fiscal para continuar.
+        </small>
+      )}
+    </div>
+  )
+}
+
+export function validateFiscalDocumentTypes(items) {
+  for (const [index, item] of items.entries()) {
+    if (
+      isCaiProduct(item.product) &&
+      !FISCAL_DOCUMENT_TYPES.includes(item.specs?.fiscal_document_type)
+    )
+      throw new Error(
+        `Seleccioná un tipo de documento fiscal válido para el producto ${index + 1}.`,
+      )
+  }
 }
 
 function Caispecs({ item, set, index }) {
@@ -237,32 +292,52 @@ function Caispecs({ item, set, index }) {
   )
 }
 
-function MissingQuoteBindings({ items, onChange }) {
+function MissingQuoteSpecifications({ items, sourceItems, onChange }) {
   return (
     <div className="form-grid">
-      {items.map(
-        (item, index) =>
-          usesPrintForm(item.product) &&
-          !item.specs?.cai_binding && (
-            <Select
-              key={item.id || index}
-              label={`Tipo de encuadernación · producto ${index + 1}`}
-              required
-              empty="Seleccionar encuadernación"
-              options={CAI_BINDINGS}
-              value={item.specs?.cai_binding || ''}
-              onChange={(e) =>
-                onChange(
-                  items.map((current, i) =>
-                    i === index
-                      ? { ...current, specs: { ...current.specs, cai_binding: e.target.value } }
-                      : current,
-                  ),
-                )
-              }
-            />
-          ),
-      )}
+      {items.map((item, index) => {
+        const missingFiscal =
+          isCaiProduct(item.product) && !sourceItems[index]?.specs?.fiscal_document_type
+        const missingBinding = isCaiProduct(item.product) && !sourceItems[index]?.specs?.cai_binding
+        if (!missingFiscal && !missingBinding) return null
+        return (
+          <div key={item.id || index} className="missing-quote-specs">
+            {missingFiscal && (
+              <FiscalDocumentField
+                label={`Tipo de documento fiscal · producto ${index + 1}`}
+                value={item.specs?.fiscal_document_type}
+                onChange={(value) =>
+                  onChange(
+                    items.map((current, i) =>
+                      i === index
+                        ? { ...current, specs: { ...current.specs, fiscal_document_type: value } }
+                        : current,
+                    ),
+                  )
+                }
+              />
+            )}
+            {missingBinding && (
+              <Select
+                label={`Tipo de encuadernación · producto ${index + 1}`}
+                required
+                empty="Seleccionar encuadernación"
+                options={CAI_BINDINGS}
+                value={item.specs?.cai_binding || ''}
+                onChange={(e) =>
+                  onChange(
+                    items.map((current, i) =>
+                      i === index
+                        ? { ...current, specs: { ...current.specs, cai_binding: e.target.value } }
+                        : current,
+                    ),
+                  )
+                }
+              />
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -319,6 +394,12 @@ export function ItemsEditor({ items, onChange }) {
                 value={item.product}
                 onChange={(e) => changeProduct(index, e.target.value)}
               />
+              {isCaiProduct(item.product) && (
+                <FiscalDocumentField
+                  value={item.specs?.fiscal_document_type}
+                  onChange={(value) => spec(index, 'fiscal_document_type', value)}
+                />
+              )}
               {cai ? (
                 <Caispecs item={item} set={set} index={index} />
               ) : (
@@ -406,7 +487,10 @@ export function cleanItems(items) {
     ),
     specs: Object.fromEntries(
       Object.entries(item.specs || {})
-        .filter(([, v]) => v !== '' && v !== null)
+        .filter(
+          ([k, v]) =>
+            v !== '' && v !== null && (k !== 'fiscal_document_type' || isCaiProduct(item.product)),
+        )
         .map(([k, v]) => [
           k,
           ['copies', 'sheets', 'games_per_pad', 'additional_copies'].includes(k) ? Number(v) : v,
@@ -648,11 +732,14 @@ export default function ProductForm({
     (q) => q.status === 'Aceptada' && q.currency === HNL_CURRENCY && !q.production_id,
   )
   const oldUsd = !!source && source.currency !== HNL_CURRENCY
+  const selectedQuote = (quoteId) =>
+    accepted.find((candidate) => String(candidate.id) === quoteId) ||
+    (source && String(source.id) === quoteId ? source : null)
   const initial = {
     items: source?.items
       ? source.items.map((i) => ({
           ...i,
-          product: quote ? newOrderProduct(i.product) : i.product,
+          product: newOrderProduct(i.product),
           ...(oldUsd ? { unit_price: '' } : {}),
         }))
       : [newItem()],
@@ -677,6 +764,7 @@ export default function ProductForm({
         : '',
   }
   async function save(values) {
+    validateFiscalDocumentTypes(values.items)
     for (const item of values.items) {
       if (usesPrintForm(item.product) && !CAI_BINDINGS.includes(item.specs?.cai_binding))
         throw new Error('Selecciona un tipo de encuadernación para cada producto CAI.')
@@ -802,7 +890,11 @@ export default function ProductForm({
               onChange={(e) => {
                 const q = accepted.find((x) => String(x.id) === e.target.value)
                 set('quote_id', e.target.value)
-                if (q) set('items', q.items)
+                if (q)
+                  set(
+                    'items',
+                    q.items.map((item) => ({ ...item, product: newOrderProduct(item.product) })),
+                  )
               }}
             />
           )}
@@ -812,13 +904,21 @@ export default function ProductForm({
                 Se reutilizarán los productos y precios de la versión aceptada.{' '}
                 <Badge>{v.items.length} productos</Badge>
               </div>
-              {v.items.some((item) => usesPrintForm(item.product) && !item.specs?.cai_binding) && (
+              {selectedQuote(v.quote_id)?.items?.some(
+                (item) =>
+                  isCaiProduct(item.product) &&
+                  (!item.specs?.cai_binding || !item.specs?.fiscal_document_type),
+              ) && (
                 <>
                   <div className="notice">
-                    Esta cotización histórica no tiene tipo de encuadernación registrado.
-                    Selecciónalo antes de generar la orden; sus demás datos se conservarán.
+                    Esta cotización histórica tiene especificaciones CAI pendientes. Complétalas
+                    antes de generar la orden; sus demás datos se conservarán.
                   </div>
-                  <MissingQuoteBindings items={v.items} onChange={(items) => set('items', items)} />
+                  <MissingQuoteSpecifications
+                    items={v.items}
+                    sourceItems={selectedQuote(v.quote_id).items}
+                    onChange={(items) => set('items', items)}
+                  />
                 </>
               )}
             </>

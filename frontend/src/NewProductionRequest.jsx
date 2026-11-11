@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { api, money, uid } from './api'
 import { ErrorBox, Field, FormDialog, RadioGroup, Select } from './components'
 import { ClientAutocomplete } from './NewCase'
-import { ItemsEditor, cleanItems, newItem } from './ProductForm'
+import { ItemsEditor, cleanItems, newItem, validateFiscalDocumentTypes } from './ProductForm'
 import {
   DEFAULT_DELIVERY_METHOD,
   DELIVERY_METHOD_OPTIONS,
@@ -38,6 +38,7 @@ export default function NewProductionRequest({ user, onClose }) {
     if (!v.client_id) throw new Error('Selecciona un cliente antes de guardar.')
     if (!v.subject.trim()) throw new Error('Escribe el asunto de la solicitud.')
     if (!v.items.length) throw new Error('Agrega al menos un producto.')
+    validateFiscalDocumentTypes(v.items)
     const body = {
       ...v,
       client_id: Number(v.client_id),

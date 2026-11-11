@@ -113,7 +113,7 @@ export default function NewCase({
           </div>
           <p className="muted">
             {creationContext === 'pool'
-              ? 'Se creará sin asignar en Pool general.'
+              ? 'Se creará sin asignar en Bandeja general.'
               : 'Se asignará a tu usuario.'}{' '}
             Puede cerrarse sin producir ningún trabajo.
           </p>

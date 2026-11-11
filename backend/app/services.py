@@ -10,7 +10,7 @@ from .models import Case, Client, Contact, Delivery, Event, Idempotency, Item, L
 from .security import can, require, require_binding_scanner
 from .repository import get_case, today, row, delivery_status, local_day, quantity_text, balance, attention_predicates, case_completion_blockers
 from . import schemas as s
-from .cai import CAI_BINDINGS, cai_summary, is_cai_product, uses_print_form, new_order_product
+from .cai import CAI_BINDINGS, FISCAL_DOCUMENT_TYPES, cai_summary, is_cai_product, uses_print_form, new_order_product
 
 NEXT_STAGE = s.NEXT_STAGE
 PREVIOUS_STAGES = s.PREVIOUS_STAGES
@@ -341,11 +341,18 @@ def total(items):
 
 
 # ---- Cotizaciones y ampliación del expediente a producción ----
+def serialize_product_item(item):
+    value = item.model_dump(mode='json')
+    if value['specs'].get('fiscal_document_type') is None:
+        value['specs'].pop('fiscal_document_type', None)
+    return value
+
+
 def add_quote(db, user, case_id, data):
     case, changed = mutation(db, user, case_id, data, 'quote', 'attention')
     if not changed: return case
     if data.valid_until < today(): fail('La vigencia ya terminó')
-    items = [i.model_dump(mode='json') for i in data.items]
+    items = [serialize_product_item(i) for i in data.items]
     version = (db.scalar(select(func.max(Quote.version)).where(Quote.case_id == case.id)) or 0) + 1
     db.add(Quote(case_id=case.id, version=version, items=items, total=total(items), currency=CURRENCY_HNL, valid_until=data.valid_until))
     event(db, case, user, f'Cotización v{version} preparada', data={'financial': True})
@@ -367,7 +374,7 @@ def decide_quote(db, user, case_id, quote_id, data):
 def convert(db, user, case_id, data, *, permission='attention'):
     case, changed = mutation(db, user, case_id, data, 'convert', permission)
     if not changed: return case
-    items = [i.model_dump(mode='json') for i in data.items]
+    items = [serialize_product_item(i) for i in data.items]
     if data.quote_id:
         quote = db.get(Quote, data.quote_id)
         if not quote or quote.case_id != case.id or quote.status != 'Aceptada': fail('Selecciona una cotización aceptada de esta solicitud')
@@ -375,14 +382,17 @@ def convert(db, user, case_id, data, *, permission='attention'):
             fail('Esta cotización ya está vinculada a una orden. Usa “Agregar orden” y especifica los productos del nuevo trabajo.', 409)
         if quote.currency != CURRENCY_HNL: fail('Esta cotización histórica está en USD. Revísala y crea una nueva versión en HNL antes de generar producción.', 409)
         quoted_items = quote.items or []
-        needs_binding = any(
+        needs_enrichment = any(
             is_cai_product(item.get('product'))
-            and not (item.get('specs') or {}).get('cai_binding')
+            and (
+                not (item.get('specs') or {}).get('cai_binding')
+                or not (item.get('specs') or {}).get('fiscal_document_type')
+            )
             for item in quoted_items
         )
-        if needs_binding:
+        if needs_enrichment:
             if len(data.items) != len(quoted_items):
-                fail('Selecciona el tipo de encuadernación para cada producto CAI antes de generar la orden')
+                fail('Completa la encuadernación y el tipo de documento fiscal pendientes antes de generar la orden')
 
             def clean(value):
                 if isinstance(value, dict):
@@ -393,32 +403,39 @@ def convert(db, user, case_id, data, *, permission='attention'):
 
             resolved_items = deepcopy(quoted_items)
             for index, (original, submitted) in enumerate(zip(quoted_items, data.items)):
-                chosen = submitted.model_dump(mode='json')
+                chosen = serialize_product_item(submitted)
                 if (
-                    original.get('product') != chosen.get('product')
+                    new_order_product(original.get('product')) != new_order_product(chosen.get('product'))
                     or Decimal(str(original.get('quantity'))) != submitted.quantity
                     or original.get('unit') != submitted.unit
                     or Decimal(str(original.get('unit_price'))) != submitted.unit_price
                 ):
-                    fail('Al completar una cotización histórica solo puedes indicar la encuadernación pendiente')
+                    fail('Al completar una cotización histórica solo puedes indicar las especificaciones pendientes')
 
                 source_specs = dict(original.get('specs') or {})
                 chosen_specs = dict(chosen.get('specs') or {})
                 source_binding = source_specs.pop('cai_binding', None)
                 chosen_binding = chosen_specs.pop('cai_binding', None)
+                source_fiscal_type = source_specs.pop('fiscal_document_type', None)
+                chosen_fiscal_type = chosen_specs.pop('fiscal_document_type', None)
                 if clean(source_specs) != clean(chosen_specs):
-                    fail('Al completar una cotización histórica solo puedes indicar la encuadernación pendiente')
+                    fail('Al completar una cotización histórica solo puedes indicar las especificaciones pendientes')
                 if is_cai_product(original.get('product')):
                     if source_binding:
                         if source_binding != chosen_binding:
                             fail('La encuadernación cotizada no puede cambiar al generar la orden')
                     elif chosen_binding not in CAI_BINDINGS:
                         fail('Selecciona un tipo de encuadernación válido para cada producto CAI')
-                    else:
-                        resolved_items[index]['specs'] = {
-                            **(resolved_items[index].get('specs') or {}),
-                            'cai_binding': chosen_binding,
-                        }
+                    if source_fiscal_type:
+                        if source_fiscal_type != chosen_fiscal_type:
+                            fail('El tipo de documento fiscal cotizado no puede cambiar al generar la orden')
+                    elif chosen_fiscal_type not in FISCAL_DOCUMENT_TYPES:
+                        fail('Selecciona un tipo de documento fiscal válido para cada producto CAI')
+                    resolved_items[index]['specs'] = {
+                        **(resolved_items[index].get('specs') or {}),
+                        **({'cai_binding': chosen_binding} if not source_binding else {}),
+                        **({'fiscal_document_type': chosen_fiscal_type} if not source_fiscal_type else {}),
+                    }
             items = resolved_items
         else:
             items = quoted_items

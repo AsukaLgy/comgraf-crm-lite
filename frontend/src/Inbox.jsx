@@ -16,7 +16,7 @@ import NewCase from './NewCase'
 import NewProductionRequest from './NewProductionRequest'
 
 export const VIEW_LABELS = {
-  pool: 'Solicitudes sin asignar',
+  pool: 'Bandeja general',
   action: 'Requieren acción',
   mine: 'Mis solicitudes',
   'mine-action': 'Requieren mi acción',
@@ -254,7 +254,7 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
             ) : view === 'pool' || view === 'action' ? (
               <>
                 <Link className={view === 'pool' ? 'active' : ''} to="/inbox/pool">
-                  Solicitudes sin asignar <Badge>{counts.data?.pool ?? 0}</Badge>
+                  Bandeja general <Badge>{counts.data?.pool ?? 0}</Badge>
                 </Link>
                 <Link className={view === 'action' ? 'active' : ''} to="/inbox/action">
                   Requieren acción <Badge>{counts.data?.action ?? 0}</Badge>

@@ -19,7 +19,7 @@ test.beforeEach(async ({ page }) => {
   ).toBeVisible()
 })
 
-test('Mi día muestra trabajo pendiente y Pool general conserva solicitudes sin asignar', async ({
+test('Mi día muestra trabajo pendiente y Bandeja general conserva solicitudes sin asignar', async ({
   page,
 }) => {
   const clientResponse = await page.request.post('/api/clients', {
@@ -43,8 +43,8 @@ test('Mi día muestra trabajo pendiente y Pool general conserva solicitudes sin 
   await page.reload()
   expect((await actionResponse).ok()).toBeTruthy()
   await expect(page.locator('.home-metrics .metric')).toHaveCount(3)
-  await expect(page.locator('.home-metrics')).not.toContainText('Solicitudes sin asignar')
-  await expect(page.locator('.inbox .tabs')).not.toContainText('Solicitudes sin asignar')
+  await expect(page.locator('.home-metrics')).not.toContainText('Bandeja general')
+  await expect(page.locator('.inbox .tabs')).not.toContainText('Bandeja general')
   await expect(page.locator('.inbox .tabs .active')).toContainText('Requieren acción')
   await expect(page.locator('.inbox .table-wrap')).toBeVisible()
 
@@ -60,16 +60,16 @@ test('Mi día muestra trabajo pendiente y Pool general conserva solicitudes sin 
   await expect(page.getByRole('dialog')).toHaveCount(0)
   expect(savedViews[0].filters.view).toBe('action')
 
-  await page.getByRole('link', { name: 'Pool general' }).click()
+  await page.getByRole('link', { name: 'Bandeja general' }).click()
   await expect(page).toHaveURL(/\/inbox\/pool$/)
-  await expect(page.locator('.inbox .tabs .active')).toContainText('Solicitudes sin asignar')
+  await expect(page.locator('.inbox .tabs .active')).toContainText('Bandeja general')
   await expect(page.getByRole('row').filter({ hasText: subject })).toBeVisible()
   await expect(page.locator('.inbox .tabs .active .badge')).not.toHaveText('0')
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('link', { name: 'Mi día' }).click()
   await expect(page.locator('.home-metrics .metric')).toHaveCount(3)
-  await expect(page.locator('.inbox .tabs')).not.toContainText('Solicitudes sin asignar')
+  await expect(page.locator('.inbox .tabs')).not.toContainText('Bandeja general')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy()
 })
 

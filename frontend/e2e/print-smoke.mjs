@@ -41,6 +41,7 @@ const record = {
             cai_format: 'Media carta',
             paper_type: 'Químico',
             cai_binding: 'Engrapado',
+            fiscal_document_type: 'Factura',
             additional_copies: 2,
             detail: 'Original y dos copias autocopiativas.',
           },

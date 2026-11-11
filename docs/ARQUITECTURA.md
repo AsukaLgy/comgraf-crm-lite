@@ -33,7 +33,7 @@ Se usa aislamiento READ COMMITTED para que la segunda transacción vea el result
 
 ## Alta y asignación
 
-Solo «Mis solicitudes» y sus subpestañas personales envían `creation_context=personal`; el servidor asigna entonces `owner_id` al usuario autenticado y aplica capacidad. Pool general, Mi día, perfil del cliente y otros accesos crean sin responsable. La ruta de Producción crea solicitud y OP en una transacción, sin propietario y sin consumir capacidad personal; el autor queda en eventos y `created_by_id`. Agregar una OP a una solicitud existente conserva su responsable.
+Solo «Mis solicitudes» y sus subpestañas personales envían `creation_context=personal`; el servidor asigna entonces `owner_id` al usuario autenticado y aplica capacidad. Bandeja general, Mi día, perfil del cliente y otros accesos crean sin responsable. La ruta de Producción crea solicitud y OP en una transacción, sin propietario y sin consumir capacidad personal; el autor queda en eventos y `created_by_id`. Agregar una OP a una solicitud existente conserva su responsable.
 
 ## Cotizaciones y producción
 
@@ -46,6 +46,8 @@ El calendario distingue eventos (entrega comprometida, inicio programado y segui
 ## Catálogo e impresión
 
 `backend/app/cai.py` define el catálogo nuevo, la familia fiscal CAI y el formulario compartido; `frontend/src/domain.js` refleja sus opciones. «Talonario CAI» y «Talonarios y facturas» usan las mismas especificaciones; el genérico no se interpreta como documento fiscal. Las cuatro denominaciones CAI anteriores se aceptan para lectura histórica y se normalizan a «Talonario CAI» solo al crear una nueva OP, sin modificar la cotización ni su snapshot. `games_per_pad` es un entero de 1 a 10 000; el resumen de producción deriva juegos y hojas, mientras el precio comercial usa talonarios. La hoja fiscal muestra el producto real, QR y especificaciones aprobadas sin juegos por talonario ni precios.
+
+`specs.fiscal_document_type` guarda una de las nueve opciones definidas en `backend/app/cai.py` y reflejadas en `frontend/src/domain.js`. `ItemInput` la exige para nuevas líneas CAI y la prohíbe en productos genéricos. Los JSON históricos sin la clave se leen sin migración ni valor artificial. La conversión de una cotización CAI antigua permite completar solo el tipo o la encuadernación pendientes en la nueva OP; conserva intactos cotización y snapshot originales. La vista de detalles y la impresión muestran «No especificado» al leer líneas antiguas sin tipo.
 
 ## Dinero y tiempo
 
