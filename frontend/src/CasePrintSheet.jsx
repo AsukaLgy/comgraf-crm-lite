@@ -69,8 +69,12 @@ function identityFor(record, production) {
   if (production.client_snapshot) {
     const snapshot = production.client_snapshot
     const keys = ['company', 'person', 'rtn', 'phone', 'email']
+    const hasCapturedName = Object.hasOwn(snapshot, 'client_name') && snapshot.client_name != null
+    const profileName = record.client?.name || ''
     return {
       ...Object.fromEntries(keys.map((key) => [key, snapshot[key] ?? ''])),
+      clientName: hasCapturedName ? snapshot.client_name : profileName,
+      clientNameFromProfile: !hasCapturedName && Boolean(profileName),
       historicalFallback: false,
       incompleteSnapshot: keys.some(
         (key) => !Object.hasOwn(snapshot, key) || snapshot[key] == null,
@@ -82,6 +86,8 @@ function identityFor(record, production) {
   const email = record.case_contact?.email || (client.emails?.length === 1 ? client.emails[0] : '')
   return {
     company: client.company || '',
+    clientName: client.name || '',
+    clientNameFromProfile: false,
     person: record.case_contact?.name || (!client.company ? client.name : ''),
     rtn: client.rtn || '',
     phone,
@@ -118,7 +124,7 @@ function SheetHeader({ record, production, items, identity, measureRef }) {
           production={production}
           caseNumber={record.number}
           description={items.map((item) => item.product).join(', ')}
-          client={identity.company || identity.person}
+          client={identity.company || identity.clientName || identity.person}
           numberBelow
         />
       </div>
@@ -136,7 +142,7 @@ function sheetRows(items, production, identity) {
           <div className="order-sheet-client-fields">
             {[
               ['Empresa', identity.company],
-              ['Persona', identity.person],
+              ['Nombre del cliente', identity.clientName],
               ['RTN', identity.rtn],
               ['Teléfono', identity.phone],
               ['Correo', identity.email],
@@ -148,6 +154,11 @@ function sheetRows(items, production, identity) {
           </div>
           {identity.historicalFallback && (
             <small>Datos actuales del cliente; OP histórica sin captura de identidad.</small>
+          )}
+          {identity.clientNameFromProfile && (
+            <small>
+              Nombre del cliente tomado del perfil actual; no consta en la captura histórica.
+            </small>
           )}
           {identity.incompleteSnapshot && (
             <small>
@@ -242,6 +253,7 @@ export default function CasePrintSheet({ record, preview = false }) {
     number: record.number,
     clientSnapshot: production?.client_snapshot,
     client: production?.client_snapshot ? null : record.client,
+    resolvedClientName: identity?.clientName,
     caseContact: production?.client_snapshot ? null : record.case_contact,
     items,
     instructions: production?.instructions,

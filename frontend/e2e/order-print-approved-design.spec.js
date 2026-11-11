@@ -134,6 +134,7 @@ test('el diseño aprobado conserva los cinco datos y cambia correctamente entre 
   const identity = first.production.client_snapshot
   expect(identity).toMatchObject({
     company: client.company,
+    client_name: client.name,
     person: ana.name,
     rtn: client.rtn,
     phone: ana.phone,
@@ -179,7 +180,7 @@ test('el diseño aprobado conserva los cinco datos y cambia correctamente entre 
   await expect(fields).toHaveCount(5)
   for (const [label, value] of [
     ['Empresa:', identity.company],
-    ['Persona:', identity.person],
+    ['Nombre del cliente:', identity.client_name],
     ['RTN:', identity.rtn],
     ['Teléfono:', identity.phone],
     ['Correo:', identity.email],
@@ -247,10 +248,12 @@ test('el diseño aprobado conserva los cinco datos y cambia correctamente entre 
   const picker = page.getByRole('combobox', { name: 'Orden de producción para imprimir' })
   await picker.selectOption(String(second.production.id))
   await expect(page.locator('.order-sheet[data-layout-ready="true"]')).toBeVisible()
-  await expect(page.locator('.order-sheet')).toContainText('Luis López')
+  await expect(page.locator('.order-sheet')).toContainText(
+    'Nombre del cliente: Cliente de prueba Aurora',
+  )
   await expect(page.locator('.order-sheet')).toContainText('Lona 13 oz')
   await expect(page.locator('.order-sheet')).not.toContainText('Cantidad de talonarios')
-  await expect(page.locator('.order-sheet')).not.toContainText('Ana Gómez')
+  await expect(page.locator('.order-sheet')).not.toContainText('Luis López')
   await picker.selectOption(String(third.production.id))
   await expect(page.locator('.order-sheet[data-layout-ready="true"]')).toBeVisible()
   await expect(page.locator('.order-sheet .order-sheet-item')).toHaveCount(2)
@@ -291,7 +294,7 @@ test('identidad opcional e histórica conserva vacíos y señala el origen', asy
   const fields = page.locator('.order-sheet .order-sheet-client-fields span')
   await expect(fields).toHaveCount(5)
   await expect(fields.nth(0)).toContainText('Empresa: —')
-  await expect(fields.nth(1)).toContainText('Persona: Cliente individual de prueba')
+  await expect(fields.nth(1)).toContainText('Nombre del cliente: Cliente individual de prueba')
   for (const index of [2, 3, 4]) await expect(fields.nth(index)).toContainText('—')
   await page.screenshot({ path: '../.runtime/approved-design-optional.png', fullPage: true })
   await page.route(`**/api/cases/${record.id}*`, async (route) => {
@@ -303,7 +306,10 @@ test('identidad opcional e histórica conserva vacíos y señala el origen', asy
   await page.reload()
   await expect(page.locator('.order-sheet')).toContainText('Captura histórica incompleta')
   await expect(fields.nth(0)).toContainText('Empresa: Empresa histórica')
-  await expect(fields.nth(1)).toContainText('Persona: —')
+  await expect(fields.nth(1)).toContainText('Nombre del cliente: Cliente individual de prueba')
+  await expect(page.locator('.order-sheet')).toContainText(
+    'Nombre del cliente tomado del perfil actual',
+  )
   await expect(fields.nth(4)).toContainText('Correo: —')
   await page.screenshot({
     path: '../.runtime/approved-design-partial-snapshot.png',
@@ -320,8 +326,98 @@ test('identidad opcional e histórica conserva vacíos y señala el origen', asy
   })
   await page.reload()
   await expect(page.locator('.order-sheet')).toContainText('OP histórica sin captura de identidad')
-  await expect(fields.nth(1)).toContainText('Persona: Cliente individual de prueba')
+  await expect(fields.nth(1)).toContainText('Nombre del cliente: Cliente individual de prueba')
   await expect(fields.nth(3)).toContainText('Teléfono: —')
   await expect(fields.nth(4)).toContainText('Correo: —')
   await page.screenshot({ path: '../.runtime/approved-design-no-snapshot.png', fullPage: true })
+})
+
+test('el nombre largo capturado permanece y el legado toma el nombre vigente del perfil', async ({
+  page,
+}) => {
+  test.setTimeout(90000)
+  await login(page)
+  const originalName =
+    'María Fernanda de los Ángeles Martínez, responsable de compras y producción gráfica regional'
+  const client = await post(page, '/api/clients', {
+    name: originalName,
+    company: 'Imprenta Largo Horizonte',
+  })
+  let record = await post(page, '/api/cases', {
+    client_id: client.id,
+    subject: 'Nombre del cliente en OP',
+    kind: 'Solicitud',
+    creation_context: 'personal',
+  })
+  record = await post(page, `/api/cases/${record.id}/take`, {
+    version: record.version,
+    key: randomUUID(),
+  })
+  record = await post(page, `/api/cases/${record.id}/convert`, {
+    version: record.version,
+    key: randomUUID(),
+    delivery_method: 'Retiro en local',
+    items: [caiItem()],
+  })
+  const snapshot = record.production.client_snapshot
+  expect(snapshot.client_name).toBe(originalName)
+  expect(snapshot.company).toBe(client.company)
+  expect(snapshot.person).toBe('')
+
+  await page.goto(`/cases/${record.id}?production_id=${record.production.id}&tab=production`)
+  const preview = page.locator('.order-preview-sheet')
+  await expect(preview).toContainText(`Nombre del cliente: ${originalName}`)
+  await expect(preview).not.toContainText('Nombre del cliente tomado del perfil actual')
+  await page.screenshot({ path: '../.runtime/client-name-preview.png', fullPage: true })
+
+  const printUrl = `/cases/${record.id}/print?production_id=${record.production.id}`
+  await page.goto(printUrl)
+  await expect(page.locator('.order-sheet[data-layout-ready="true"]')).toBeVisible()
+  await expect(page.locator('.order-sheet[data-layout-overflow="false"]')).toBeVisible()
+  await expect(page.locator('.order-sheet-client-fields span').nth(1)).toContainText(originalName)
+  const pdf = path.resolve('../.runtime/client-name-captured.pdf')
+  await page.pdf({ path: pdf, preferCSSPageSize: true, printBackground: true })
+  const pdfText = execFileSync('pdftotext', ['-layout', pdf, '-'], { encoding: 'utf8' })
+  expect(pdfText).toContain('Nombre del cliente:')
+  expect(pdfText).toContain('María Fernanda')
+  await page.screenshot({ path: '../.runtime/client-name-captured.png', fullPage: true })
+
+  const changedName = 'Nombre vigente del perfil después de crear la OP'
+  const updated = await page.request.put(`/api/clients/${client.id}`, {
+    headers,
+    data: {
+      name: changedName,
+      company: client.company,
+      rtn: client.rtn,
+      phones: client.phones,
+      emails: client.emails,
+      addresses: client.addresses,
+      observations: client.observations,
+      provisional: client.provisional,
+      version: client.version,
+    },
+  })
+  expect(updated.ok(), await updated.text()).toBeTruthy()
+  await page.reload()
+  await expect(page.locator('.order-sheet-client-fields span').nth(1)).toContainText(originalName)
+  await expect(page.locator('.order-sheet')).not.toContainText(changedName)
+
+  let fallbackName = changedName
+  await page.route(`**/api/cases/${record.id}*`, async (route) => {
+    const response = await route.fetch()
+    const oldOrder = await response.json()
+    delete oldOrder.production.client_snapshot.client_name
+    oldOrder.client.name = fallbackName
+    await route.fulfill({ response, json: oldOrder })
+  })
+  await page.getByRole('button', { name: 'Recargar' }).click()
+  await expect(page.locator('.order-sheet-client-fields span').nth(1)).toContainText(changedName)
+  await expect(page.locator('.order-sheet')).toContainText(
+    'Nombre del cliente tomado del perfil actual; no consta en la captura histórica.',
+  )
+  fallbackName = `${changedName} con una denominación extensa que requiere una nueva medición`
+  await page.getByRole('button', { name: 'Recargar' }).click()
+  await expect(page.locator('.order-sheet-client-fields span').nth(1)).toContainText(fallbackName)
+  await expect(page.locator('.order-sheet[data-layout-ready="true"]')).toBeVisible()
+  await expect(page.locator('.order-sheet[data-layout-overflow="false"]')).toBeVisible()
 })

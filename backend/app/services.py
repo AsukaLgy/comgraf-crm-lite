@@ -461,7 +461,8 @@ def convert(db, user, case_id, data, *, permission='attention'):
     if email and email not in allowed_emails: fail('Selecciona un correo registrado del cliente')
     client_snapshot = {
         'client_id': client.id, 'contact_id': contact.id if contact else None,
-        'company': client.company or '', 'person': contact.name if contact else (client.name if not client.company else ''),
+        'company': client.company or '', 'client_name': client.name or '',
+        'person': contact.name if contact else (client.name if not client.company else ''),
         'rtn': client.rtn or '', 'phone': phone, 'email': email,
     }
     price = total(items)

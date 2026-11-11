@@ -53,16 +53,26 @@ def test_cai_order_uses_pads_as_commercial_quantity_and_snapshots_client(clients
     summary=production['specs_snapshot']['items'][0]['cai_summary']
     assert summary=={'total_games':500,'sheets_per_game':3,'finished_sheets':1500}
     assert order['items'][0]['quantity']=='10.000' and order['items'][0]['unit']=='talonarios'
-    assert production['client_snapshot']=={'client_id':customer['id'],'contact_id':None,'company':'Gráfica Norte','person':'','rtn':'08011990001234','phone':'+504 9999-1234','email':'maria@example.test'}
+    assert production['client_snapshot']=={'client_id':customer['id'],'contact_id':None,'company':'Gráfica Norte','client_name':customer['name'],'person':'','rtn':'08011990001234','phone':'+504 9999-1234','email':'maria@example.test'}
 
-    changed={'name':customer['name'],'company':'Empresa actualizada','rtn':'11111111111111','phones':customer['phones'],'emails':customer['emails'],'addresses':customer['addresses'],'observations':customer['observations'],'provisional':customer['provisional'],'version':customer['version']}
+    changed={'name':'Nombre posterior','company':'Empresa actualizada','rtn':'11111111111111','phones':customer['phones'],'emails':customer['emails'],'addresses':customer['addresses'],'observations':customer['observations'],'provisional':customer['provisional'],'version':customer['version']}
     assert api.put(f"/api/clients/{customer['id']}",json=changed).status_code==200
     reopened=must(api.get(f"/api/cases/{case['id']}?production_id={production['id']}"))
     assert reopened['production']['client_snapshot']['company']=='Gráfica Norte'
+    assert reopened['production']['client_snapshot']['client_name']==customer['name']
     second=mutate(api,reopened,'convert',{**conversion(),'items':[cai_item(quantity='2')]})
+    assert second['production']['client_snapshot']['client_name']=='Nombre posterior'
     assert second['production']['scan_id']!=production['scan_id']
     first_again=must(api.get(f"/api/cases/{case['id']}?production_id={production['id']}"))
     assert first_again['production']['scan_id']==production['scan_id']
+    with SessionLocal.begin() as db:
+        historical = db.get(Production, production['id'])
+        snapshot = dict(historical.client_snapshot)
+        snapshot.pop('client_name')
+        historical.client_snapshot = snapshot
+    legacy = must(api.get(f"/api/cases/{case['id']}?production_id={production['id']}"))
+    assert 'client_name' not in legacy['production']['client_snapshot']
+    assert legacy['production']['client_snapshot']['company'] == 'Gráfica Norte'
 
 
 @pytest.mark.parametrize('games', [10, 25, 50])
@@ -119,6 +129,7 @@ def test_new_production_request_without_contact_uses_general_client_details(clie
     snapshot = created['production']['client_snapshot']
     assert snapshot['contact_id'] is None
     assert snapshot['company'] == customer['company'] and snapshot['rtn'] == customer['rtn']
+    assert snapshot['client_name'] == customer['name']
     assert snapshot['person'] == ''
     assert snapshot['phone'] == customer['phones'][0]
     assert snapshot['email'] == customer['emails'][0]
@@ -138,8 +149,21 @@ def test_new_order_does_not_guess_among_multiple_general_contacts(clients):
         'version': 1, 'key': key()}), 201)
     snapshot = created['production']['client_snapshot']
     assert snapshot['company'] == customer['company'] and snapshot['rtn'] == customer['rtn']
+    assert snapshot['client_name'] == customer['name']
     assert snapshot['contact_id'] is None and snapshot['person'] == ''
     assert snapshot['phone'] == '' and snapshot['email'] == ''
+
+
+def test_new_order_without_company_captures_client_name_separately(clients):
+    api = clients['admin']
+    customer = must(api.post('/api/clients', json={'name': 'Cliente individual'}), 201)
+    created = must(api.post('/api/production-requests', json={**conversion(),
+        'client_id': customer['id'], 'subject': 'OP individual',
+        'version': 1, 'key': key()}), 201)
+    snapshot = created['production']['client_snapshot']
+    assert snapshot['company'] == ''
+    assert snapshot['client_name'] == customer['name']
+    assert snapshot['person'] == customer['name']
 
 
 @pytest.mark.parametrize('games', [10, 25, 50])
@@ -316,6 +340,7 @@ def test_cai_contact_is_scoped_and_quote_conversion_preserves_specs(clients):
     assert saved['specs']['cai_format']=='Media carta' and saved['specs']['games_per_pad']==50 and saved['specs']['cai_binding']=='Engrapado'
     assert converted['production']['contact_id']==contact['id']
     assert converted['production']['client_snapshot']['person']=='Ana Gómez'
+    assert converted['production']['client_snapshot']['client_name']==customer['name']
     assert converted['production']['client_snapshot']['phone']=='9999-1111'
 
     other=must(api.post('/api/clients',json={'name':'Otra persona','phones':[],'emails':[]}),201)
