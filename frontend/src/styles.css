@@ -276,7 +276,7 @@ dialog .integrated-create-section .autocomplete{min-width:min(100%,280px)}
 .unscheduled-collections{padding:12px 17px}
 .calendar-event.collection-missing{display:flex;color:inherit;border-color:#a52c37;background:#fff8f8}
 
-/* Una composición para toda OP. La tabla repite identificación y QR al continuar. */
+/* Composición CAI de web 1.5 adaptada a todas las OP y a continuaciones medidas. */
 .case-order-list{display:grid;gap:8px;margin-bottom:16px}
 .case-order-entry{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px;border:1px solid var(--line);border-radius:7px;background:#fff}
 .case-order-entry.selected{border:2px solid var(--primary);background:#f1f8f6;padding:11px}
@@ -290,46 +290,51 @@ dialog .integrated-create-section .autocomplete{min-width:min(100%,280px)}
 .order-sheet{width:8.5in;max-width:none;margin:0 auto;padding:0;background:white;color:#17272b;font:11pt/1.25 Arial,sans-serif}
 .order-sheet-page{width:8.5in;min-height:5.5in;padding:.28in;margin:0 auto 12px;background:white}
 .order-sheet-measure{position:absolute;left:-10000px;top:0;visibility:hidden;width:7.94in;color:#17272b;font:11pt/1.25 Arial,sans-serif}
-.order-sheet-header{display:grid;grid-template-columns:minmax(0,1fr) 34mm;align-items:start;gap:4mm;border-bottom:2px solid #086b65;padding-bottom:2mm;margin-bottom:2mm}
+.order-sheet-header{display:grid;grid-template-columns:minmax(0,1fr) 38mm;align-items:start;gap:5mm;border-bottom:2px solid #086b65;padding-bottom:2mm;margin-bottom:2mm}
 .order-sheet-heading{min-width:0}
-.order-sheet-brand{display:flex;align-items:center;gap:2mm;color:#07534f;font-size:14pt;line-height:1.1}
-.order-sheet-brand img{width:15mm;height:15mm;object-fit:contain;flex:none}
-.order-sheet h1{font-size:14pt;line-height:1.15;letter-spacing:0;margin:1mm 0;color:#17272b}
+.order-sheet-brand{display:flex;align-items:center;gap:3mm;min-height:17mm;margin-bottom:1mm;color:#07534f;font-size:15pt;line-height:1.1}
+.order-sheet-brand img{width:16mm;height:16mm;object-fit:contain;flex:none}
+.order-sheet h1{font-size:13pt;line-height:1.2;letter-spacing:0;margin:1mm 0;color:#17272b;overflow-wrap:anywhere}
 .order-sheet-identifiers{display:flex;align-items:baseline;gap:3mm;flex-wrap:wrap}
 .order-sheet-identifiers strong{font-size:12pt}
 .order-sheet-identifiers span,.order-sheet-dates{font-size:9pt}
 .order-sheet-dates{display:flex;flex-wrap:wrap;gap:1mm 3mm;margin-top:1mm}
 .order-sheet-cancelled{display:block;width:max-content;border:2px solid #a52c37;padding:1px 6px;color:#a52c37;margin-top:1mm;font-size:11pt}
-.order-sheet-qr .order-qr{display:grid;grid-template-columns:30mm;grid-template-rows:30mm auto;justify-content:center;justify-items:center;gap:1mm;width:34mm;max-width:none;min-height:0;margin:0;padding:0;border:0;border-radius:0;background:none}
+.order-sheet-qr .order-qr{display:grid;grid-template-columns:30mm;grid-template-rows:30mm auto;justify-content:center;justify-items:center;gap:1mm;width:38mm;max-width:none;min-height:0;margin:0;padding:0;border:0;border-radius:0;background:none}
 .order-sheet-qr .order-qr img,.order-sheet-qr .qr-placeholder{width:30mm!important;height:30mm!important;min-width:30mm;image-rendering:pixelated}
 .order-sheet-qr .order-qr-details{display:none}
 .order-sheet-qr .qr-number{font-size:9pt;color:#17272b}
 .order-sheet .order-sheet-row{break-inside:avoid;page-break-inside:avoid}
-:is(.order-sheet,.order-sheet-measure) .order-sheet-row section{border:0;border-bottom:1px solid #aab8b6;padding:1.5mm 0;margin:0;break-inside:avoid}
+:is(.order-sheet,.order-sheet-measure) .order-sheet-row section{border:0;border-bottom:1px solid #9eaaa8;padding:1mm 0;margin:0;break-inside:avoid}
 .order-sheet .order-sheet-row:last-child section{border-bottom:0}
 :is(.order-sheet,.order-sheet-measure) h2{font-size:11pt;line-height:1.2;margin:0 0 1mm;color:#17272b}
-.order-sheet-client p{display:inline;margin:0 3mm 0 0;line-height:1.3}
-.order-sheet-client small{display:block;font-size:8pt}
+.order-sheet-client-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1mm 3mm}
+.order-sheet-client-fields span{min-width:0;overflow-wrap:anywhere}
+.order-sheet-client small{display:block;margin-top:1mm;font-size:9pt}
+.order-sheet-specs-title{margin:1mm 0 2mm!important}
+.order-sheet-item h3{font-size:11pt;line-height:1.2;margin:0 0 1mm;color:#17272b;overflow-wrap:anywhere}
 .order-sheet-item dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1mm 3mm;margin:0}
 .order-sheet-item dl>div{display:flex;align-items:baseline;gap:1mm;min-width:0}
 .order-sheet-item dt{font-weight:700;flex:none}
 .order-sheet-item dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.order-sheet-item dl>.fiscal-document-spec{grid-column:1/-1;display:grid;grid-template-columns:max-content minmax(0,1fr);gap:1mm}
+.order-sheet-item .fiscal-document-spec dt{white-space:normal}
 .order-sheet-notes{overflow-wrap:anywhere;white-space:pre-wrap}
 .order-preview-panel .order-sheet{width:8.5in;max-width:none}
 .print-document.print-letter .order-sheet,.print-document.print-half .order-sheet{width:8.5in;min-height:0}
 @media(max-width:650px){.case-order-entry{align-items:stretch;flex-direction:column}.case-order-entry-actions{width:100%}.case-order-entry-actions>*{flex:1}.print-order-picker{min-width:0}}
 @media print{
-  html{background:white}
+  :root,html{background:white}
   .print-document.print-letter .order-sheet{page:letter-order}
   .print-document.print-half .order-sheet{page:half-order}
   .print-document .order-sheet{width:auto;max-width:none;min-height:0;margin:0;padding:0;font-size:11pt;line-height:1.25}
   .order-sheet-measure{display:none}
   .print-document .order-sheet-page{width:auto;height:4.94in;min-height:0;margin:0;padding:0;break-after:page;page-break-after:always}
   .print-document .order-sheet-page:last-child{break-after:auto;page-break-after:auto}
-  .print-document .order-sheet h1{font-size:14pt}
+  .print-document .order-sheet h1{font-size:13pt}
   .print-document .order-sheet h2{font-size:11pt}
-  .print-document .order-sheet .order-sheet-row section{padding:1.5mm 0;break-inside:avoid}
-  .print-document   .print-document .order-sheet-qr .order-qr img{width:30mm!important;height:30mm!important}
+  .print-document .order-sheet .order-sheet-row section{padding:1mm 0;break-inside:avoid}
+  .print-document .order-sheet-qr .order-qr img{width:30mm!important;height:30mm!important}
 }
 
 /* Indicadores: las cinco etapas son una sola fila compacta en escritorio. */

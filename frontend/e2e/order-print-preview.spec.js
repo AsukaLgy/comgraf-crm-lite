@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
+import QRCode from 'qrcode'
+import { PNG } from 'pngjs'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -32,43 +34,29 @@ async function caseState(page, caseId, orderId) {
   }
 }
 
-async function decodedPreviewQr(page) {
-  if (!(await page.evaluate(() => Boolean(window.ZXingBrowser)))) {
-    await page.addScriptTag({ url: '/qr-test-decoder.js' })
-  }
-  const image = page.locator('.order-preview-sheet .order-qr img')
-  await expect
-    .poll(() => image.evaluate((element) => element.complete && element.naturalWidth > 0))
-    .toBe(true)
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      return await page.evaluate(async () => {
-        const reader = new window.ZXingBrowser.BrowserQRCodeReader()
-        const source = document.querySelector('.order-preview-sheet .order-qr img')
-        const fullResolution = new Image()
-        fullResolution.src = source.src
-        await fullResolution.decode()
-        const result = await reader.decodeFromImageElement(fullResolution)
-        return result.getText()
-      })
-    } catch (error) {
-      if (attempt === 2) throw error
-      await page.waitForTimeout(150)
-    }
-  }
+async function expectPreviewQr(page, scanId) {
+  const expected = await QRCode.toDataURL(`CGOP1:${scanId}`, {
+    errorCorrectionLevel: 'M',
+    margin: 4,
+    width: 320,
+    color: { dark: '#000000', light: '#ffffff' },
+  })
+  const source = await page
+    .locator('.order-preview-sheet .order-qr img')
+    .first()
+    .getAttribute('src')
+  expect(source).toMatch(/^data:image\/png;base64,/)
+  const actualPixels = PNG.sync.read(Buffer.from(source.split(',')[1], 'base64'))
+  const expectedPixels = PNG.sync.read(Buffer.from(expected.split(',')[1], 'base64'))
+  expect(actualPixels.width).toBe(expectedPixels.width)
+  expect(actualPixels.height).toBe(expectedPixels.height)
+  expect(actualPixels.data.equals(expectedPixels.data)).toBe(true)
 }
 
 test('historial, pestañas, vista previa e impresión conservan la OP seleccionada', async ({
   page,
 }) => {
   test.setTimeout(180000)
-  await page.route('**/qr-test-decoder.js', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'text/javascript',
-      body: fs.readFileSync(path.resolve('node_modules/@zxing/browser/umd/zxing-browser.min.js')),
-    }),
-  )
   await page.goto('/')
   await page.getByLabel('Usuario', { exact: true }).fill(credentials.username)
   await page.getByLabel('Contraseña', { exact: true }).fill(credentials.password)
@@ -176,8 +164,9 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
   const firstQr = page
     .locator('.order-preview-sheet')
     .getByRole('img', { name: `QR estable de la orden ${firstOrder.order_number}` })
+    .first()
   await expect(firstQr).toBeVisible()
-  expect(await decodedPreviewQr(page)).toBe(`CGOP1:${firstOrder.scan_id}`)
+  await expectPreviewQr(page, firstOrder.scan_id)
   await page.screenshot({ path: '../.runtime/order-preview-normal.png', fullPage: true })
   await page.reload()
   await expect(
@@ -215,8 +204,9 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
   const secondQr = page
     .locator('.order-preview-sheet')
     .getByRole('img', { name: `QR estable de la orden ${secondOrder.order_number}` })
+    .first()
   await expect(secondQr).toBeVisible()
-  expect(await decodedPreviewQr(page)).toBe(`CGOP1:${secondOrder.scan_id}`)
+  await expectPreviewQr(page, secondOrder.scan_id)
   await page.screenshot({ path: '../.runtime/order-preview-cai.png', fullPage: true })
 
   await page.locator('.case-order-entry').nth(2).getByRole('button', { name: 'Ver orden' }).click()
@@ -229,7 +219,7 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
   await expect(mixedItems.nth(1)).toContainText('250 unidades')
   await expect(mixedItems.nth(1)).not.toContainText('Cantidad de talonarios')
   await expect(mixedItems.nth(1)).not.toContainText('Tipo de documento fiscal')
-  expect(await decodedPreviewQr(page)).toBe(`CGOP1:${thirdOrder.scan_id}`)
+  await expectPreviewQr(page, thirdOrder.scan_id)
   await orderSelector.selectOption(String(secondOrder.id))
   await expect(page.locator('.order-preview-sheet')).toContainText(secondOrder.order_number)
 
@@ -290,7 +280,8 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
   await expect(
     page
       .locator('.print-sheet')
-      .getByRole('img', { name: `QR estable de la orden ${secondOrder.order_number}` }),
+      .getByRole('img', { name: `QR estable de la orden ${secondOrder.order_number}` })
+      .first(),
   ).toBeVisible()
   const printPicker = page.getByRole('combobox', { name: 'Orden de producción para imprimir' })
   await printPicker.selectOption(String(thirdOrder.id))

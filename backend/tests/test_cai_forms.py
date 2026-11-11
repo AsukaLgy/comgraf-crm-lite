@@ -118,8 +118,28 @@ def test_new_production_request_without_contact_uses_general_client_details(clie
     assert created['production']['contact_id'] is None
     snapshot = created['production']['client_snapshot']
     assert snapshot['contact_id'] is None
+    assert snapshot['company'] == customer['company'] and snapshot['rtn'] == customer['rtn']
+    assert snapshot['person'] == ''
     assert snapshot['phone'] == customer['phones'][0]
     assert snapshot['email'] == customer['emails'][0]
+
+
+def test_new_order_does_not_guess_among_multiple_general_contacts(clients):
+    api = clients['admin']
+    customer = must(api.post('/api/clients', json={
+        'name': 'Cliente comercial', 'company': 'Empresa de prueba', 'rtn': '08011990009999',
+        'phones': ['2222-1111', '2222-2222'],
+        'emails': ['uno@example.test', 'dos@example.test'],
+    }), 201)
+    for name in ('Ana', 'Luis'):
+        must(api.post(f"/api/clients/{customer['id']}/contacts", json={'name': name}), 201)
+    created = must(api.post('/api/production-requests', json={**conversion(),
+        'client_id': customer['id'], 'subject': 'Sin selección arbitraria',
+        'version': 1, 'key': key()}), 201)
+    snapshot = created['production']['client_snapshot']
+    assert snapshot['company'] == customer['company'] and snapshot['rtn'] == customer['rtn']
+    assert snapshot['contact_id'] is None and snapshot['person'] == ''
+    assert snapshot['phone'] == '' and snapshot['email'] == ''
 
 
 @pytest.mark.parametrize('games', [10, 25, 50])

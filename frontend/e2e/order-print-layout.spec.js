@@ -73,6 +73,8 @@ test('una OP mixta extensa conserva la cabecera y el QR en páginas Carta y medi
   })
   const url = `/cases/${record.id}/print?production_id=${converted.production.id}`
   await page.goto(url)
+  await expect(page.locator('.order-sheet[data-layout-ready="true"]')).toBeVisible()
+  await expect(page.locator('.order-sheet')).toHaveAttribute('data-layout-overflow', 'false')
   await expect(page.locator('.order-sheet .order-sheet-item')).toHaveCount(8)
   await expect(page.getByRole('img', { name: /QR estable de la orden/ }).first()).toBeVisible()
   const out = path.resolve('../.runtime/order-long-letter.pdf')

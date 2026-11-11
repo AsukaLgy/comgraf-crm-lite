@@ -48,9 +48,9 @@ function itemFields(item) {
         specs.cai_format &&
           `${specs.cai_format}${caiDimensions[specs.cai_format] ? ` (${caiDimensions[specs.cai_format]} pulgadas)` : ''}`,
       ),
-      field('Papel', specs.paper_type),
+      field('Tipo de papel', specs.paper_type),
       field('Encuadernación', specs.cai_binding),
-      field('Copias adicionales', specs.additional_copies),
+      field('Número de copias', specs.additional_copies),
       field('Cantidad de talonarios', item.quantity),
     ].filter(Boolean)
   const dimensions =
@@ -66,20 +66,33 @@ function itemFields(item) {
 }
 
 function identityFor(record, production) {
-  if (production.client_snapshot)
-    return { ...production.client_snapshot, historicalFallback: false }
+  if (production.client_snapshot) {
+    const snapshot = production.client_snapshot
+    const keys = ['company', 'person', 'rtn', 'phone', 'email']
+    return {
+      ...Object.fromEntries(keys.map((key) => [key, snapshot[key] ?? ''])),
+      historicalFallback: false,
+      incompleteSnapshot: keys.some(
+        (key) => !Object.hasOwn(snapshot, key) || snapshot[key] == null,
+      ),
+    }
+  }
   const client = record.client || {}
+  const phone = record.case_contact?.phone || (client.phones?.length === 1 ? client.phones[0] : '')
+  const email = record.case_contact?.email || (client.emails?.length === 1 ? client.emails[0] : '')
   return {
     company: client.company || '',
     person: record.case_contact?.name || (!client.company ? client.name : ''),
     rtn: client.rtn || '',
-    phone: record.case_contact?.phone || client.phones?.[0] || '',
-    email: record.case_contact?.email || client.emails?.[0] || '',
+    phone,
+    email,
     historicalFallback: true,
+    incompleteSnapshot: false,
   }
 }
 
 function SheetHeader({ record, production, items, identity, measureRef }) {
+  const products = [...new Set(items.map((item) => item.product))].join(', ')
   return (
     <header className="order-sheet-header" ref={measureRef}>
       <div className="order-sheet-heading">
@@ -87,11 +100,11 @@ function SheetHeader({ record, production, items, identity, measureRef }) {
           <img src="/branding/comgraf-logo.png" alt="" />
           <strong>Comunicación Gráfica</strong>
         </div>
-        <h1>Orden de producción</h1>
         <div className="order-sheet-identifiers">
           <strong>{production.order_number}</strong>
           <span>Solicitud {record.number}</span>
         </div>
+        <h1>Orden de producción{products ? ` — ${products}` : ''}</h1>
         {production.cancelled_at && <strong className="order-sheet-cancelled">OP ANULADA</strong>}
         <div className="order-sheet-dates">
           <span>Creada: {formatDateTime(production.created_at)}</span>
@@ -113,47 +126,74 @@ function SheetHeader({ record, production, items, identity, measureRef }) {
   )
 }
 
-function sheetRows(items, production, identity, client, contact) {
+function sheetRows(items, production, identity) {
   const rows = [
     {
       key: 'client',
       content: (
         <section className="order-sheet-client">
-          <h2>Cliente</h2>
-          <p>{client || 'No especificado'}</p>
-          {identity.company && identity.person && <p>Contacto: {identity.person}</p>}
-          {contact && <p>{contact}</p>}
+          <h2>Datos del cliente</h2>
+          <div className="order-sheet-client-fields">
+            {[
+              ['Empresa', identity.company],
+              ['Persona', identity.person],
+              ['RTN', identity.rtn],
+              ['Teléfono', identity.phone],
+              ['Correo', identity.email],
+            ].map(([label, value]) => (
+              <span key={label}>
+                <b>{label}:</b> {value || '—'}
+              </span>
+            ))}
+          </div>
           {identity.historicalFallback && (
             <small>Datos actuales del cliente; OP histórica sin captura de identidad.</small>
+          )}
+          {identity.incompleteSnapshot && (
+            <small>
+              Captura histórica incompleta; los campos ausentes no se sustituyeron por datos
+              actuales.
+            </small>
           )}
         </section>
       ),
     },
   ]
   items.forEach((item, index) => {
-    rows.push({
-      key: `item-${index}`,
-      content: (
-        <section className="order-sheet-item">
-          <h2>
-            Producto {index + 1}: {item.product}
-          </h2>
-          <dl>
-            {itemFields(item).map(({ label, value }) => (
-              <div
-                key={label}
-                className={
-                  label === 'Tipo de documento fiscal' ? 'fiscal-document-spec' : undefined
-                }
-              >
-                <dt>{label}:</dt>
-                <dd>{value}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
-      ),
-    })
+    const fields = itemFields(item)
+    const size = usesPrintForm(item.product) ? 6 : 3
+    for (let offset = 0; offset < fields.length; offset += size) {
+      const continuation = offset > 0
+      rows.push({
+        key: `item-${index}-${offset}`,
+        content: (
+          <section className="order-sheet-item">
+            {index === 0 && !continuation && (
+              <h2 className="order-sheet-specs-title">
+                Especificaciones de la orden · {production.order_number}
+              </h2>
+            )}
+            <h3>
+              {production.order_number} · Producto {index + 1} · {item.product}
+              {continuation ? ' (continuación)' : ''}
+            </h3>
+            <dl>
+              {fields.slice(offset, offset + size).map(({ label, value }) => (
+                <div
+                  key={label}
+                  className={
+                    label === 'Tipo de documento fiscal' ? 'fiscal-document-spec' : undefined
+                  }
+                >
+                  <dt>{label}:</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ),
+      })
+    }
   })
   items.forEach((item, index) => {
     textChunks(item.specs?.detail).forEach((chunk, chunkIndex) => {
@@ -162,7 +202,8 @@ function sheetRows(items, production, identity, client, contact) {
         content: (
           <section className="order-sheet-notes">
             <strong>
-              Producto {index + 1} · Observaciones{chunkIndex ? ' (continuación)' : ''}:
+              {production.order_number} · Producto {index + 1} · Observaciones
+              {chunkIndex ? ' (continuación)' : ''}:
             </strong>{' '}
             {chunk}
           </section>
@@ -175,7 +216,10 @@ function sheetRows(items, production, identity, client, contact) {
       key: `instructions-${index}`,
       content: (
         <section className="order-sheet-notes">
-          <strong>Instrucciones{index ? ' (continuación)' : ''}:</strong> {chunk}
+          <strong>
+            {production.order_number} · Instrucciones{index ? ' (continuación)' : ''}:
+          </strong>{' '}
+          {chunk}
         </section>
       ),
     })
@@ -185,46 +229,79 @@ function sheetRows(items, production, identity, client, contact) {
 
 export default function CasePrintSheet({ record, preview = false }) {
   const production = record.production
+  const productionId = production?.id
   const measureRef = useRef(null)
   const headerRef = useRef(null)
   const [layout, setLayout] = useState(null)
   const items =
     production?.specs_snapshot?.items || production?.approved_snapshot?.items || record.items || []
   const identity = production ? identityFor(record, production) : null
-  const contact = identity ? [identity.phone, identity.email].filter(Boolean).join(' · ') : ''
-  const client = identity
-    ? [identity.company || identity.person, identity.rtn && `RTN ${identity.rtn}`]
-        .filter(Boolean)
-        .join(' · ')
-    : ''
-  const rows = production ? sheetRows(items, production, identity, client, contact) : []
+  const rows = production ? sheetRows(items, production, identity) : []
+  const contentSignature = JSON.stringify({
+    id: productionId,
+    number: record.number,
+    clientSnapshot: production?.client_snapshot,
+    client: production?.client_snapshot ? null : record.client,
+    caseContact: production?.client_snapshot ? null : record.case_contact,
+    items,
+    instructions: production?.instructions,
+    createdAt: production?.created_at,
+    committedDate: production?.committed_date,
+    cancelledAt: production?.cancelled_at,
+  })
   useLayoutEffect(() => {
-    if (!production || !measureRef.current || !headerRef.current) return
-    const rowElements = [...measureRef.current.children]
-    // Both paper modes expose the same 4.94-inch content height. Measure the actual
-    // wrapped text at print width instead of assuming a fixed number of products.
-    const budget = 4.94 * 96 - headerRef.current.getBoundingClientRect().height - 10
-    const groups = [[]]
-    let used = 0
-    rowElements.forEach((element, index) => {
-      const height = element.getBoundingClientRect().height
-      if (used + height > budget && groups.at(-1).length) {
-        groups.push([])
-        used = 0
-      }
-      groups.at(-1).push(index)
-      used += height
+    if (!productionId || !measureRef.current || !headerRef.current) return
+    let active = true
+    let assetsReady = false
+    const calculate = () => {
+      if (!active || !measureRef.current || !headerRef.current) return
+      const rowElements = [...measureRef.current.children]
+      // Both paper modes expose the same 4.94-inch content height. Measure wrapped
+      // text at print width after fonts and images settle, and on later size changes.
+      const budget = 4.94 * 96 - headerRef.current.getBoundingClientRect().height - 10
+      const groups = [[]]
+      let used = 0
+      let oversized = false
+      rowElements.forEach((element, index) => {
+        const height = element.getBoundingClientRect().height
+        if (height > budget) oversized = true
+        if (used + height > budget && groups.at(-1).length) {
+          groups.push([])
+          used = 0
+        }
+        groups.at(-1).push(index)
+        used += height
+      })
+      setLayout((current) =>
+        current?.signature === contentSignature &&
+        current.ready === assetsReady &&
+        current.oversized === oversized &&
+        JSON.stringify(current.groups) === JSON.stringify(groups)
+          ? current
+          : { signature: contentSignature, groups, ready: assetsReady, oversized },
+      )
+    }
+    calculate()
+    const observer = new ResizeObserver(calculate)
+    observer.observe(measureRef.current)
+    observer.observe(headerRef.current)
+    const images = [...headerRef.current.querySelectorAll('img')]
+    Promise.all([
+      document.fonts.ready,
+      ...images.map((image) => image.decode().catch(() => {})),
+    ]).then(() => {
+      if (!active) return
+      assetsReady = true
+      calculate()
     })
-    setLayout((current) =>
-      current?.productionId === production.id &&
-      JSON.stringify(current.groups) === JSON.stringify(groups)
-        ? current
-        : { productionId: production.id, groups },
-    )
-  }, [production])
+    return () => {
+      active = false
+      observer.disconnect()
+    }
+  }, [contentSignature, productionId])
   if (!production) return null
   const groups =
-    layout?.productionId === production.id && layout.groups.flat().length === rows.length
+    layout?.signature === contentSignature && layout.groups.flat().length === rows.length
       ? layout.groups
       : [rows.map((_, index) => index)]
   return (
@@ -236,7 +313,15 @@ export default function CasePrintSheet({ record, preview = false }) {
           </div>
         ))}
       </div>
-      <article className={`print-sheet order-sheet${preview ? ' order-preview-sheet' : ''}`}>
+      <article
+        className={`print-sheet order-sheet${preview ? ' order-preview-sheet' : ''}`}
+        data-layout-ready={
+          layout?.signature === contentSignature && layout.ready ? 'true' : 'false'
+        }
+        data-layout-overflow={
+          layout?.signature === contentSignature && layout.oversized ? 'true' : 'false'
+        }
+      >
         {groups.map((group, pageIndex) => (
           <div className="order-sheet-page" key={`${production.id}-${pageIndex}`}>
             <SheetHeader

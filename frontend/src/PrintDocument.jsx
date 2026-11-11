@@ -8,9 +8,22 @@ import { PrintOrderPicker } from './OrderNavigation'
 
 export async function printReady() {
   await document.fonts.ready
+  const deadline = Date.now() + 10000
+  while (true) {
+    const sheet = document.querySelector('.print-sheet')
+    if (!sheet) throw new Error('La orden seleccionada todavía no está disponible.')
+    if (sheet.dataset.layoutOverflow === 'true')
+      throw new Error(
+        'Una especificación supera el área imprimible. Revisá el contenido antes de imprimir.',
+      )
+    if (document.querySelector('.qr-error'))
+      throw new Error('El QR no está listo. Reintenta cuando aparezca completo.')
+    if (sheet.dataset.layoutReady === 'true' && !document.querySelector('.qr-placeholder')) break
+    if (Date.now() >= deadline)
+      throw new Error('La vista previa aún se está preparando. Reintenta en unos segundos.')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
   const images = [...document.querySelectorAll('.print-sheet img')]
-  if (document.querySelector('.qr-error, .qr-placeholder'))
-    throw new Error('El QR no está listo. Reintenta cuando aparezca completo.')
   await Promise.all(images.map((img) => img.decode()))
   if (!images.some((img) => img.alt.includes('QR estable')))
     throw new Error('Falta el QR de la orden.')
