@@ -63,8 +63,8 @@ test('Producción crea Talonario CAI con cliente existente', async ({ page }) =>
   await expect(page.locator('.order-preview-sheet')).toContainText('Tipo de documento fiscal:')
   await expect(page.locator('.order-preview-sheet')).toContainText('Factura prevalorada')
   await page.goto(`/cases/${created.id}/print?production_id=${created.production.id}`)
-  await expect(page.locator('.cai-print')).toContainText('Talonario CAI')
-  await expect(page.locator('.cai-print')).toContainText('Factura prevalorada')
+  await expect(page.locator('.order-sheet')).toContainText('Talonario CAI')
+  await expect(page.locator('.order-sheet')).toContainText('Factura prevalorada')
   await expect(page.getByRole('img', { name: /QR estable de la orden/ })).toBeVisible()
   await page.screenshot({ path: '../.runtime/production-cai-created-print.png', fullPage: true })
 })
@@ -113,14 +113,14 @@ test('dos talonarios CAI conservan tipos fiscales distintos en la OP y el impres
   ])
   await dialog.getByRole('button', { name: 'Mantener en Aprobación' }).click()
   await page.goto(`/cases/${created.id}/print?production_id=${created.production.id}`)
-  await expect(page.locator('.cai-print .fiscal-document-spec')).toHaveCount(2)
-  await expect(page.locator('.cai-print .fiscal-document-spec').nth(0)).toContainText('Factura')
-  await expect(page.locator('.cai-print .fiscal-document-spec').nth(1)).toContainText(
+  await expect(page.locator('.order-sheet .fiscal-document-spec')).toHaveCount(2)
+  await expect(page.locator('.order-sheet .fiscal-document-spec').nth(0)).toContainText('Factura')
+  await expect(page.locator('.order-sheet .fiscal-document-spec').nth(1)).toContainText(
     'Recibo por honorarios profesionales',
   )
   expect(
     await page
-      .locator('.cai-print')
+      .locator('.order-sheet')
       .evaluate((element) => element.scrollWidth <= element.clientWidth),
   ).toBeTruthy()
   await expect(page.getByRole('img', { name: /QR estable de la orden/ })).toBeVisible()

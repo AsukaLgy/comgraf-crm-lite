@@ -257,6 +257,28 @@ def conversion(owner=None):
     return {'items':[item()],'committed_date':str(today()+timedelta(days=3)), 'payment_due_date':str(today()-timedelta(days=1)), 'delivery_method':'Retiro en taller','advance_required':'100.00','payment_terms':'Contado'}
 
 
+def test_order_navigation_lists_every_order_and_rejects_foreign_selection(clients):
+    api = clients['admin']
+    _, case = create(api, 'Tres OP visibles')
+    case = mutate(api, case, 'take')
+    names = ['Tarjetas de presentación', 'Volantes y flyers', 'Banners y lonas']
+    orders = []
+    for name in names:
+        case = mutate(api, case, 'convert', {**conversion(), 'items': [{**item(), 'product': name}]})
+        orders.append(case['production']['id'])
+    default = must(api.get(f'/api/cases/{case["id"]}'))
+    assert default['production']['id'] == orders[0]
+    assert [order['product_names'] for order in default['productions']] == [[name] for name in names]
+    selected = must(api.get(f'/api/cases/{case["id"]}?production_id={orders[2]}'))
+    assert selected['production']['id'] == orders[2]
+    assert [line['product'] for line in selected['items']] == [names[2]]
+    _, other = create(api, 'Otra solicitud')
+    other = mutate(api, other, 'take')
+    other = mutate(api, other, 'convert', conversion())
+    assert api.get(f'/api/cases/{case["id"]}?production_id={other["production"]["id"]}').status_code == 404
+    assert api.get(f'/api/cases/{case["id"]}?production_id=99999999').status_code == 404
+
+
 def test_multiple_orders_keep_products_stages_deliveries_and_calendar_separate(clients):
     api=clients['admin'];_,c=create(api,'Paquete para dos sucursales')
     c=mutate(api,c,'take')

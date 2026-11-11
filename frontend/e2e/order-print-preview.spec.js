@@ -44,9 +44,11 @@ async function decodedPreviewQr(page) {
     try {
       return await page.evaluate(async () => {
         const reader = new window.ZXingBrowser.BrowserQRCodeReader()
-        const result = await reader.decodeFromImageElement(
-          document.querySelector('.order-preview-sheet .order-qr img'),
-        )
+        const source = document.querySelector('.order-preview-sheet .order-qr img')
+        const fullResolution = new Image()
+        fullResolution.src = source.src
+        await fullResolution.decode()
+        const result = await reader.decodeFromImageElement(fullResolution)
         return result.getText()
       })
     } catch (error) {
@@ -126,15 +128,50 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
   })
   const firstOrder = first.production
   const secondOrder = second.production
+  const third = await post(page, `/api/cases/${record.id}/convert`, {
+    ...common,
+    version: second.version,
+    key: randomUUID(),
+    instructions: 'OP mixta con dos familias',
+    items: [
+      {
+        product: 'Talonario CAI',
+        quantity: '1',
+        unit: 'talonarios',
+        unit_price: '0',
+        specs: {
+          cai_format: 'Carta',
+          games_per_pad: 10,
+          paper_type: 'Bond',
+          additional_copies: 1,
+          cai_binding: 'Pegado',
+          fiscal_document_type: 'Nota de crédito',
+        },
+      },
+      {
+        product: 'Volantes y flyers',
+        quantity: '250',
+        unit: 'unidades',
+        unit_price: '0',
+        specs: { width: '10', height: '15', measure_unit: 'cm', material: 'Couché' },
+      },
+    ],
+  })
+  const thirdOrder = third.production
   expect(firstOrder.id).not.toBe(secondOrder.id)
+  expect(thirdOrder.id).not.toBe(secondOrder.id)
   const beforeFirst = await caseState(page, record.id, firstOrder.id)
   const beforeSecond = await caseState(page, record.id, secondOrder.id)
+  const beforeThird = await caseState(page, record.id, thirdOrder.id)
 
   await page.goto(`/cases/${record.id}?production_id=${firstOrder.id}`)
   await expect(page.getByRole('button', { name: 'Producción', exact: true })).toHaveClass(/active/)
   await expect(
     page.getByRole('heading', { name: `Vista previa · ${firstOrder.order_number}` }),
   ).toBeVisible()
+  await expect(page.locator('.case-order-entry')).toHaveCount(3)
+  await expect(page.locator('.case-order-entry').nth(2)).toContainText('Talonario CAI')
+  await expect(page.locator('.case-order-entry').nth(2)).toContainText('Volantes y flyers')
   await expect(page.locator('.order-preview-sheet')).toContainText('Instrucciones de la primera OP')
   const firstQr = page
     .locator('.order-preview-sheet')
@@ -170,7 +207,7 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
   await expect(
     page.getByRole('heading', { name: `Vista previa · ${secondOrder.order_number}` }),
   ).toBeVisible()
-  await expect(page.locator('.order-preview-sheet')).toHaveClass(/cai-print/)
+  await expect(page.locator('.order-preview-sheet')).toHaveClass(/order-sheet/)
   await expect(page.locator('.order-preview-sheet')).toContainText('Media carta')
   await expect(page.locator('.order-preview-sheet')).not.toContainText(
     'Instrucciones de la primera OP',
@@ -182,6 +219,20 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
   expect(await decodedPreviewQr(page)).toBe(`CGOP1:${secondOrder.scan_id}`)
   await page.screenshot({ path: '../.runtime/order-preview-cai.png', fullPage: true })
 
+  await page.locator('.case-order-entry').nth(2).getByRole('button', { name: 'Ver orden' }).click()
+  await expect(page).toHaveURL(new RegExp(`production_id=${thirdOrder.id}`))
+  await expect(page.locator('.case-order-entry.selected')).toContainText(thirdOrder.order_number)
+  const mixedItems = page.locator('.order-preview-sheet .order-sheet-item')
+  await expect(mixedItems).toHaveCount(2)
+  await expect(mixedItems.nth(0)).toContainText('Nota de crédito')
+  await expect(mixedItems.nth(0)).toContainText('Cantidad de talonarios')
+  await expect(mixedItems.nth(1)).toContainText('250 unidades')
+  await expect(mixedItems.nth(1)).not.toContainText('Cantidad de talonarios')
+  await expect(mixedItems.nth(1)).not.toContainText('Tipo de documento fiscal')
+  expect(await decodedPreviewQr(page)).toBe(`CGOP1:${thirdOrder.scan_id}`)
+  await orderSelector.selectOption(String(secondOrder.id))
+  await expect(page.locator('.order-preview-sheet')).toContainText(secondOrder.order_number)
+
   const printLink = page
     .locator('a[target="_blank"]')
     .filter({ hasText: 'Imprimir orden de producción' })
@@ -192,7 +243,7 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
   const popupPromise = page.waitForEvent('popup')
   await printLink.click()
   const printPage = await popupPromise
-  await expect(printPage.locator('.cai-print')).toBeVisible()
+  await expect(printPage.locator('.order-sheet')).toBeVisible()
   await printPage.pdf({
     path: '../.runtime/order-preview-cai.pdf',
     preferCSSPageSize: true,
@@ -228,12 +279,12 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
   ).toBeVisible()
 
   await page.goto(`/cases/${record.id}/print?production_id=${secondOrder.id}`)
-  await expect(page.locator('.print-sheet')).toHaveClass(/cai-print/)
+  await expect(page.locator('.print-sheet')).toHaveClass(/order-sheet/)
   await expect(page.locator('.print-sheet')).toContainText(secondOrder.order_number)
   await expect(page.locator('.print-sheet')).toContainText('Comunicación Gráfica')
-  await expect(page.locator('.print-sheet>header')).not.toContainText(/comgraf/i)
+  await expect(page.locator('.order-sheet-header')).not.toContainText(/comgraf/i)
   await expect(page.locator('.print-sheet')).not.toContainText(firstOrder.order_number)
-  const caiLogo = page.locator('.cai-print-brand img[src="/branding/comgraf-logo.png"]')
+  const caiLogo = page.locator('.order-sheet-brand img[src="/branding/comgraf-logo.png"]')
   await expect(caiLogo).toBeVisible()
   expect(await caiLogo.evaluate((image) => image.naturalWidth)).toBeGreaterThan(10)
   await expect(
@@ -241,7 +292,16 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
       .locator('.print-sheet')
       .getByRole('img', { name: `QR estable de la orden ${secondOrder.order_number}` }),
   ).toBeVisible()
+  const printPicker = page.getByRole('combobox', { name: 'Orden de producción para imprimir' })
+  await printPicker.selectOption(String(thirdOrder.id))
+  await expect(page.locator('.print-sheet')).toContainText('Volantes y flyers')
+  await expect(page.locator('.print-sheet')).toContainText(thirdOrder.order_number)
+  await page.goBack()
+  await expect(page.locator('.print-sheet')).toContainText(secondOrder.order_number)
   await page.screenshot({ path: '../.runtime/qa-print-cai.png', fullPage: true })
+  await page.goto(`/cases/${record.id}/print`)
+  await expect(page).toHaveURL(new RegExp(`production_id=${firstOrder.id}`))
+  await expect(page.locator('.print-sheet')).toContainText(firstOrder.order_number)
   await page.goto(`/cases/${record.id}`)
   await expect(page.getByRole('button', { name: 'Actividad', exact: true })).toHaveClass(/active/)
   await expect(orderSelector).toHaveValue(String(firstOrder.id))
@@ -259,4 +319,5 @@ test('historial, pestañas, vista previa e impresión conservan la OP selecciona
 
   expect(await caseState(page, record.id, firstOrder.id)).toEqual(beforeFirst)
   expect(await caseState(page, record.id, secondOrder.id)).toEqual(beforeSecond)
+  expect(await caseState(page, record.id, thirdOrder.id)).toEqual(beforeThird)
 })

@@ -23,6 +23,7 @@ import OrderQRCode from './OrderQRCode'
 import DeliveryFinance from './DeliveryFinance'
 import CompleteDeliveryDialog from './CompleteDeliveryDialog'
 import ProductionStages from './ProductionStages'
+import { OrderList } from './OrderNavigation'
 import { HNL_CURRENCY, isCaiProduct } from './domain'
 import DeleteDialog from './DeleteDialog'
 import { invalidateCaseViews } from './caseCache'
@@ -64,6 +65,7 @@ export default function CasePage({ user, print = false }) {
     setSearchParams(params)
   }
   function selectProduction(productionId) {
+    if (String(productionId) === selectedProductionId) return
     setModal(null)
     const params = new URLSearchParams(searchParams)
     params.set('production_id', String(productionId))
@@ -80,8 +82,17 @@ export default function CasePage({ user, print = false }) {
       refetchOnWindowFocus: !print,
     }),
     people = useQuery({ queryKey: ['users'], queryFn: () => api('/users') })
+  useEffect(() => {
+    if (selectedProductionId || !query.data?.production?.id) return
+    const params = new URLSearchParams(searchParams)
+    params.set('production_id', String(query.data.production.id))
+    if (!params.has('tab')) params.set('tab', sectionParam[section])
+    setSearchParams(params, { replace: true })
+  }, [selectedProductionId, query.data?.production?.id, searchParams, setSearchParams, section])
   if (query.isPending) return <Loading />
   if (query.error) return <ErrorBox error={query.error} />
+  if (selectedProductionId && String(query.data.production?.id) !== selectedProductionId)
+    return <ErrorBox error="La orden seleccionada no pertenece a esta solicitud." />
   const c = query.data,
     p = c.production,
     users = people.data || [],
@@ -474,10 +485,12 @@ export default function CasePage({ user, print = false }) {
                 )
               }
             >
-              <p>
-                Orden seleccionada: <strong>{p?.order_number}</strong> ·{' '}
-                {p?.stage_label || 'Pendiente de clasificación'}
-              </p>
+              <OrderList
+                caseId={c.id}
+                orders={c.productions}
+                selectedId={p?.id}
+                onSelect={selectProduction}
+              />
             </Panel>
           )}
           {section === 'Producción' && p && (

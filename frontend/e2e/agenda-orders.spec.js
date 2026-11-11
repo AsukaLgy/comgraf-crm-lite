@@ -124,8 +124,8 @@ test('bandejas, agenda y plantilla impresa identifican cada OP', async ({ page }
 
   await page.goto(`/cases/${printing.id}/print?production_id=${printing.order.id}`)
   await expect(page.locator('.print-sheet')).toContainText('Comunicación Gráfica')
-  await expect(page.locator('.print-sheet>header')).not.toContainText(/comgraf/i)
-  const logo = page.locator('.print-sheet>header img[src="/branding/comgraf-logo.png"]')
+  await expect(page.locator('.order-sheet-header')).not.toContainText(/comgraf/i)
+  const logo = page.locator('.order-sheet-brand img[src="/branding/comgraf-logo.png"]')
   await expect(logo).toBeVisible()
   expect(await logo.evaluate((image) => image.naturalWidth)).toBeGreaterThan(10)
   await expect(

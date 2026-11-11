@@ -1,8 +1,10 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { api } from './api'
 import { ErrorBox, Loading } from './components'
 import CasePrintSheet from './CasePrintSheet'
+import { PrintOrderPicker } from './OrderNavigation'
 
 export async function printReady() {
   await document.fonts.ready
@@ -16,37 +18,63 @@ export async function printReady() {
 
 export default function PrintDocument() {
   const [mode, setMode] = useState('letter')
+  const [printing, setPrinting] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const queryClient = useQueryClient()
   const match = location.pathname.match(/^\/cases\/(\d+)\/print$/)
   const id = match?.[1]
-  const productionId = new URLSearchParams(location.search).get('production_id')
+  const productionId = searchParams.get('production_id')
   const query = useQuery({
     queryKey: ['print-case', id, productionId],
-    enabled: !!id && !!productionId,
-    queryFn: () => api(`/cases/${id}?production_id=${encodeURIComponent(productionId)}`),
+    enabled: !!id,
+    queryFn: () =>
+      api(
+        `/cases/${id}${productionId ? `?production_id=${encodeURIComponent(productionId)}` : ''}`,
+      ),
   })
+  useEffect(() => {
+    if (productionId || !query.data?.production?.id) return
+    const params = new URLSearchParams(searchParams)
+    params.set('production_id', String(query.data.production.id))
+    setSearchParams(params, { replace: true })
+  }, [productionId, query.data?.production?.id, searchParams, setSearchParams])
+  const orders =
+    query.data?.productions ||
+    queryClient
+      .getQueriesData({ queryKey: ['print-case', id] })
+      .find(([, cached]) => cached?.productions)?.[1]?.productions ||
+    []
+  const ready =
+    Boolean(productionId) &&
+    !query.isPending &&
+    !query.error &&
+    String(query.data?.production?.id) === productionId
   async function printOrder() {
+    if (!ready || printing) return
+    setPrinting(true)
     try {
       await printReady()
       window.print()
     } catch (error) {
       window.alert(error.message)
+    } finally {
+      setPrinting(false)
     }
   }
-  if (!id || !productionId)
-    return <div className="error">Selecciona una orden de producción para imprimir.</div>
-  if (query.isPending) return <Loading />
-  if (query.error)
-    return (
-      <>
-        <ErrorBox error={query.error} />
-        <button onClick={() => query.refetch()}>Reintentar carga</button>
-      </>
-    )
-  if (String(query.data.production?.id) !== productionId)
-    return <div className="error">La orden seleccionada no está disponible.</div>
+  if (!id) return <ErrorBox error="Solicitud no encontrada." />
   return (
     <main className={`print-document print-${mode}`}>
       <div className="print-document-actions">
+        <PrintOrderPicker
+          orders={orders}
+          selectedId={productionId}
+          disabled={!orders.length}
+          onSelect={(value) => {
+            const params = new URLSearchParams(searchParams)
+            params.set('production_id', value)
+            setSearchParams(params)
+          }}
+        />
         <label>
           Formato de papel{' '}
           <select value={mode} onChange={(e) => setMode(e.target.value)}>
@@ -54,8 +82,12 @@ export default function PrintDocument() {
             <option value="half">Media carta: papel personalizado</option>
           </select>
         </label>
-        <button onClick={printOrder}>Imprimir / Guardar como PDF</button>
-        <button onClick={() => query.refetch()}>Recargar</button>
+        <button disabled={!ready || printing} onClick={printOrder}>
+          {printing ? 'Preparando…' : 'Imprimir / Guardar como PDF'}
+        </button>
+        <button disabled={query.isPending} onClick={() => query.refetch()}>
+          Recargar
+        </button>
       </div>
       {mode === 'letter' && (
         <p className="print-instructions">
@@ -63,7 +95,19 @@ export default function PrintDocument() {
           del navegador. La orden ocupará la mitad superior.
         </p>
       )}
-      <CasePrintSheet id={id} record={query.data} preview />
+      {query.isPending ? (
+        <Loading />
+      ) : query.error ? (
+        <ErrorBox error={query.error} />
+      ) : !productionId && query.data?.production?.id ? (
+        <Loading />
+      ) : !productionId ? (
+        <ErrorBox error="Esta solicitud no tiene órdenes de producción para imprimir." />
+      ) : !ready ? (
+        <ErrorBox error="La orden seleccionada no pertenece a esta solicitud." />
+      ) : (
+        <CasePrintSheet record={query.data} />
+      )}
     </main>
   )
 }

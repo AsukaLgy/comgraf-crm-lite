@@ -265,7 +265,18 @@ def case_detail(db, user, case, production_id=None):
         result['production'] = next((p for p in result['productions'] if p['id'] == production_id), None)
         result['delivery_status'] = delivery_status(db, case.id, production_id)
     elif result['productions']:
-        result['production'] = next((p for p in result['productions'] if p['id'] == case.id), result['productions'][0])
+        # Stable default, independent of later orders or polling; the UI pins it in the URL.
+        result['production'] = result['productions'][0]
+    product_names = {order['id']: [] for order in result['productions']}
+    if product_names:
+        for order_id, product in db.execute(
+            select(Item.production_id, Item.product)
+            .where(Item.case_id == case.id, Item.production_id.in_(product_names))
+            .order_by(Item.production_id, Item.id)
+        ):
+            product_names[order_id].append(product)
+    for order in result['productions']:
+        order['product_names'] = product_names[order['id']]
     selected_production_id = result['production']['id'] if result.get('production') else None
     if selected_production_id is not None:
         selected_obj = db.get(Production, selected_production_id)

@@ -1,8 +1,6 @@
-import { Link } from 'react-router-dom'
-import { Printer } from 'lucide-react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { date, formatDateTime } from './api'
-import { Specifications } from './ProductForm'
-import { isCaiProduct } from './domain'
+import { isCaiProduct, usesPrintForm } from './domain'
 import OrderQRCode from './OrderQRCode'
 
 const caiDimensions = {
@@ -12,268 +10,250 @@ const caiDimensions = {
   '8.5 × 8.5': '8.5 × 8.5',
   Carta: '8.5 × 11',
 }
+const genericFields = [
+  ['material', 'Material'],
+  ['inks', 'Tintas'],
+  ['copies', 'Copias'],
+  ['numbering', 'Numeración'],
+  ['sheets', 'Hojas'],
+  ['binding', 'Encuadernación'],
+  ['finishes', 'Acabados'],
+]
 
-function printTextChunks(text, maxLength = 380) {
-  const source = String(text || '')
+function textChunks(value, limit = 140) {
+  let remaining = String(value || '').trim()
   const chunks = []
-  let offset = 0
-  while (source.length - offset > maxLength) {
-    let end = source.lastIndexOf(' ', offset + maxLength)
-    if (end < offset + Math.floor(maxLength * 0.6)) end = offset + maxLength
-    chunks.push(source.slice(offset, end))
-    offset = end
+  while (remaining.length > limit) {
+    let end = remaining.lastIndexOf(' ', limit)
+    if (end < limit / 2) end = limit
+    chunks.push(remaining.slice(0, end))
+    remaining = remaining.slice(end).trimStart()
   }
-  if (offset < source.length) chunks.push(source.slice(offset))
+  if (remaining) chunks.push(remaining)
   return chunks
 }
 
-export default function CasePrintSheet({ id, record, person, preview = false }) {
-  const production = record.production
-  const printItems =
-    production?.specs_snapshot?.items || production?.approved_snapshot?.items || record.items || []
-  const isCai = printItems.some((item) => isCaiProduct(item.product))
-  if (production && isCai) {
-    const identity = production.client_snapshot || {
-      company: record.client.company || '',
-      person: record.case_contact?.name || (!record.client.company ? record.client.name : ''),
-      rtn: record.client.rtn || '',
-      phone: record.case_contact?.phone || record.client.phones?.[0] || '',
-      email: record.case_contact?.email || record.client.emails?.[0] || '',
-    }
-    return (
-      <article className={`print-sheet cai-print${preview ? ' order-preview-sheet' : ''}`}>
-        {!preview && (
-          <div className="print-actions">
-            <button
-              onClick={() =>
-                window.open(
-                  `/cases/${id}/print?production_id=${production.id}`,
-                  '_blank',
-                  'noopener',
-                )
-              }
-            >
-              <Printer size={16} />
-              Imprimir / Guardar PDF
-            </button>
-            <Link to={`/cases/${id}?production_id=${production.id}&tab=production`}>
-              Volver a la orden
-            </Link>
-          </div>
-        )}
-        <header className="cai-print-header">
-          <div className="cai-print-heading">
-            <div className="cai-print-brand">
-              <img src="/branding/comgraf-logo.png" alt="" />
-              <strong>Comunicación Gráfica</strong>
-            </div>
-            <div className="cai-header-id">
-              <strong>{production.order_number}</strong>
-              <span>Solicitud {record.number}</span>
-            </div>
-            <h1>
-              Orden de producción —{' '}
-              {printItems
-                .map((item) => item.product)
-                .filter((value, index, all) => all.indexOf(value) === index)
-                .join(', ')}
-            </h1>
-            <div className="cai-meta">
-              <span>
-                <b>Creada:</b> {formatDateTime(production.created_at)}
-              </span>
-              {production.committed_date && (
-                <span>
-                  <b>Fecha comprometida:</b> {date(production.committed_date)}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="cai-qr">
-            <OrderQRCode
-              production={production}
-              caseNumber={record.number}
-              description={printItems.map((item) => item.product).join(', ')}
-              client={identity.company || identity.person}
-              numberBelow
-            />
-          </div>
-        </header>
-        <section className="cai-client">
-          <h2>Datos del cliente</h2>
-          <div>
-            <span>
-              <b>Empresa:</b> {identity.company || '—'}
-            </span>
-            <span>
-              <b>Persona:</b> {identity.person || '—'}
-            </span>
-            <span>
-              <b>RTN:</b> {identity.rtn || '—'}
-            </span>
-            <span>
-              <b>Teléfono:</b> {identity.phone || '—'}
-            </span>
-            <span>
-              <b>Correo:</b> {identity.email || '—'}
-            </span>
-          </div>
-        </section>
-        <h2 className="cai-items-title">
-          Especificaciones de la orden · {production.order_number}
-        </h2>
-        {printItems.map((item, index) => {
-          const specs = item.specs || {},
-            quantity = Number(item.quantity || 0)
-          return (
-            <section className="cai-item" key={item.id || index}>
-              <h3>
-                {production.order_number} · Producto {index + 1} · {item.product}
-              </h3>
-              <dl>
-                {isCaiProduct(item.product) && (
-                  <div className="fiscal-document-spec">
-                    <dt>Tipo de documento fiscal:</dt>
-                    <dd>{specs.fiscal_document_type || 'No especificado'}</dd>
-                  </div>
-                )}
-                <div>
-                  <dt>Formato</dt>
-                  <dd>
-                    {specs.cai_format || '—'}
-                    {caiDimensions[specs.cai_format]
-                      ? ` (${caiDimensions[specs.cai_format]} pulgadas)`
-                      : ''}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Tipo de papel</dt>
-                  <dd>{specs.paper_type || '—'}</dd>
-                </div>
-                <div>
-                  <dt>Encuadernación:</dt>
-                  <dd>{specs.cai_binding || 'No especificada'}</dd>
-                </div>
-                <div>
-                  <dt>Número de copias:</dt>
-                  <dd>{specs.additional_copies ?? '—'}</dd>
-                </div>
-                <div>
-                  <dt>Cantidad de talonarios</dt>
-                  <dd>{quantity}</dd>
-                </div>
-              </dl>
-              {printTextChunks(specs.detail).map((chunk, chunkIndex) => (
-                <p className="prewrap cai-observations" key={chunkIndex}>
-                  <b>
-                    {production.order_number} · Observaciones
-                    {chunkIndex ? ' (continuación)' : ''}:
-                  </b>{' '}
-                  {chunk}
-                </p>
-              ))}
-            </section>
-          )
-        })}
-        {production.instructions && (
-          <section className="cai-item">
-            {printTextChunks(production.instructions).map((chunk, chunkIndex) => (
-              <p className="prewrap cai-observations" key={chunkIndex}>
-                <b>
-                  {production.order_number} · Instrucciones
-                  {chunkIndex ? ' (continuación)' : ''}:
-                </b>{' '}
-                {chunk}
-              </p>
-            ))}
-          </section>
-        )}
-      </article>
-    )
+function field(label, value) {
+  return value === undefined || value === null || value === '' ? null : { label, value }
+}
+
+function itemFields(item) {
+  const specs = item.specs || {}
+  if (usesPrintForm(item.product))
+    return [
+      isCaiProduct(item.product) &&
+        field('Tipo de documento fiscal', specs.fiscal_document_type || 'No especificado'),
+      field(
+        'Formato',
+        specs.cai_format &&
+          `${specs.cai_format}${caiDimensions[specs.cai_format] ? ` (${caiDimensions[specs.cai_format]} pulgadas)` : ''}`,
+      ),
+      field('Papel', specs.paper_type),
+      field('Encuadernación', specs.cai_binding),
+      field('Copias adicionales', specs.additional_copies),
+      field('Cantidad de talonarios', item.quantity),
+    ].filter(Boolean)
+  const dimensions =
+    specs.width && specs.height
+      ? `${specs.width} × ${specs.height} ${specs.measure_unit || ''}`.trim()
+      : null
+  return [
+    field('Cantidad', `${item.quantity ?? '—'} ${item.unit || ''}`.trim()),
+    field('Dimensiones', dimensions),
+    field('Caras', specs.sides),
+    ...genericFields.map(([key, label]) => field(label, specs[key])),
+  ].filter(Boolean)
+}
+
+function identityFor(record, production) {
+  if (production.client_snapshot)
+    return { ...production.client_snapshot, historicalFallback: false }
+  const client = record.client || {}
+  return {
+    company: client.company || '',
+    person: record.case_contact?.name || (!client.company ? client.name : ''),
+    rtn: client.rtn || '',
+    phone: record.case_contact?.phone || client.phones?.[0] || '',
+    email: record.case_contact?.email || client.emails?.[0] || '',
+    historicalFallback: true,
   }
+}
+
+function SheetHeader({ record, production, items, identity, measureRef }) {
   return (
-    <article className={`print-sheet${preview ? ' order-preview-sheet' : ''}`}>
-      {!preview && (
-        <div className="print-actions">
-          <button
-            onClick={() =>
-              window.open(
-                `/cases/${id}/print?production_id=${production?.id}`,
-                '_blank',
-                'noopener',
-              )
-            }
-          >
-            <Printer size={16} />
-            Imprimir / Guardar PDF
-          </button>
-          <Link
-            to={`/cases/${id}${production?.id ? `?production_id=${production.id}&tab=production` : ''}`}
-          >
-            Volver a la solicitud
-          </Link>
-        </div>
-      )}
-      <header>
-        <div className="print-brand-lockup">
+    <header className="order-sheet-header" ref={measureRef}>
+      <div className="order-sheet-heading">
+        <div className="order-sheet-brand">
           <img src="/branding/comgraf-logo.png" alt="" />
-          <div>
-            <strong>Comunicación Gráfica</strong>
-            <p>Orden de producción</p>
-          </div>
+          <strong>Comunicación Gráfica</strong>
         </div>
-        <h1>
-          {record.number}
-          <br />
-          <small>{production?.order_number || 'Orden de producción'}</small>
-        </h1>
-      </header>
-      {!production ? (
-        <p>Esta solicitud está en Atención y no tiene ficha de producción.</p>
-      ) : (
-        <>
-          <h2>{record.subject}</h2>
-          <p>
-            Cliente: {record.client.name} · Responsable de la solicitud:{' '}
-            {person?.(record.owner_id) || record.owner_name || 'Sin asignar'}
-          </p>
-          <p>
-            Compromiso: {date(production.committed_date)} · Etapa:{' '}
-            {production.stage_label || 'Pendiente de clasificación'}
-            {record.delivery_status === 'Completa' ? ' · Entregado' : ''}
-            {production.cancelled_at ? ' · ANULADO' : ''}
-          </p>
-          {(
-            production.specs_snapshot?.items ||
-            production.approved_snapshot?.items ||
-            record.items
-          ).map((item) => (
-            <section key={item.id}>
-              <h3>
-                {item.product} · {item.quantity} {item.unit}
-              </h3>
-              <Specifications specs={item.specs} product={item.product} />
-            </section>
-          ))}
-          <h3>Instrucciones</h3>
-          <p className="prewrap">{production.instructions || 'Sin instrucciones adicionales'}</p>
-          <h3>Archivos de referencia</h3>
-          {record.attachments.map((attachment) => (
-            <p key={attachment.id}>
-              <a href={`/api/attachments/${attachment.id}`}>{attachment.name}</a>
-              {' · '}Arte {attachment.art_version || '—'} · SHA256:{' '}
-              <small>{attachment.sha256}</small>
-            </p>
-          ))}
-          <p>Modalidad de entrega: {production.delivery_method}</p>
-          <OrderQRCode
-            production={production}
-            caseNumber={record.number}
-            description={production.instructions || record.subject}
-            client={record.client.name}
-          />
-        </>
-      )}
-    </article>
+        <h1>Orden de producción</h1>
+        <div className="order-sheet-identifiers">
+          <strong>{production.order_number}</strong>
+          <span>Solicitud {record.number}</span>
+        </div>
+        {production.cancelled_at && <strong className="order-sheet-cancelled">OP ANULADA</strong>}
+        <div className="order-sheet-dates">
+          <span>Creada: {formatDateTime(production.created_at)}</span>
+          {production.committed_date && (
+            <span>Fecha comprometida: {date(production.committed_date)}</span>
+          )}
+        </div>
+      </div>
+      <div className="order-sheet-qr">
+        <OrderQRCode
+          production={production}
+          caseNumber={record.number}
+          description={items.map((item) => item.product).join(', ')}
+          client={identity.company || identity.person}
+          numberBelow
+        />
+      </div>
+    </header>
+  )
+}
+
+function sheetRows(items, production, identity, client, contact) {
+  const rows = [
+    {
+      key: 'client',
+      content: (
+        <section className="order-sheet-client">
+          <h2>Cliente</h2>
+          <p>{client || 'No especificado'}</p>
+          {identity.company && identity.person && <p>Contacto: {identity.person}</p>}
+          {contact && <p>{contact}</p>}
+          {identity.historicalFallback && (
+            <small>Datos actuales del cliente; OP histórica sin captura de identidad.</small>
+          )}
+        </section>
+      ),
+    },
+  ]
+  items.forEach((item, index) => {
+    rows.push({
+      key: `item-${index}`,
+      content: (
+        <section className="order-sheet-item">
+          <h2>
+            Producto {index + 1}: {item.product}
+          </h2>
+          <dl>
+            {itemFields(item).map(({ label, value }) => (
+              <div
+                key={label}
+                className={
+                  label === 'Tipo de documento fiscal' ? 'fiscal-document-spec' : undefined
+                }
+              >
+                <dt>{label}:</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ),
+    })
+  })
+  items.forEach((item, index) => {
+    textChunks(item.specs?.detail).forEach((chunk, chunkIndex) => {
+      rows.push({
+        key: `detail-${index}-${chunkIndex}`,
+        content: (
+          <section className="order-sheet-notes">
+            <strong>
+              Producto {index + 1} · Observaciones{chunkIndex ? ' (continuación)' : ''}:
+            </strong>{' '}
+            {chunk}
+          </section>
+        ),
+      })
+    })
+  })
+  textChunks(production.instructions).forEach((chunk, index) => {
+    rows.push({
+      key: `instructions-${index}`,
+      content: (
+        <section className="order-sheet-notes">
+          <strong>Instrucciones{index ? ' (continuación)' : ''}:</strong> {chunk}
+        </section>
+      ),
+    })
+  })
+  return rows
+}
+
+export default function CasePrintSheet({ record, preview = false }) {
+  const production = record.production
+  const measureRef = useRef(null)
+  const headerRef = useRef(null)
+  const [layout, setLayout] = useState(null)
+  const items =
+    production?.specs_snapshot?.items || production?.approved_snapshot?.items || record.items || []
+  const identity = production ? identityFor(record, production) : null
+  const contact = identity ? [identity.phone, identity.email].filter(Boolean).join(' · ') : ''
+  const client = identity
+    ? [identity.company || identity.person, identity.rtn && `RTN ${identity.rtn}`]
+        .filter(Boolean)
+        .join(' · ')
+    : ''
+  const rows = production ? sheetRows(items, production, identity, client, contact) : []
+  useLayoutEffect(() => {
+    if (!production || !measureRef.current || !headerRef.current) return
+    const rowElements = [...measureRef.current.children]
+    // Both paper modes expose the same 4.94-inch content height. Measure the actual
+    // wrapped text at print width instead of assuming a fixed number of products.
+    const budget = 4.94 * 96 - headerRef.current.getBoundingClientRect().height - 10
+    const groups = [[]]
+    let used = 0
+    rowElements.forEach((element, index) => {
+      const height = element.getBoundingClientRect().height
+      if (used + height > budget && groups.at(-1).length) {
+        groups.push([])
+        used = 0
+      }
+      groups.at(-1).push(index)
+      used += height
+    })
+    setLayout((current) =>
+      current?.productionId === production.id &&
+      JSON.stringify(current.groups) === JSON.stringify(groups)
+        ? current
+        : { productionId: production.id, groups },
+    )
+  }, [production])
+  if (!production) return null
+  const groups =
+    layout?.productionId === production.id && layout.groups.flat().length === rows.length
+      ? layout.groups
+      : [rows.map((_, index) => index)]
+  return (
+    <>
+      <div className="order-sheet-measure" aria-hidden="true" ref={measureRef}>
+        {rows.map((row) => (
+          <div className="order-sheet-row" key={row.key}>
+            {row.content}
+          </div>
+        ))}
+      </div>
+      <article className={`print-sheet order-sheet${preview ? ' order-preview-sheet' : ''}`}>
+        {groups.map((group, pageIndex) => (
+          <div className="order-sheet-page" key={`${production.id}-${pageIndex}`}>
+            <SheetHeader
+              record={record}
+              production={production}
+              items={items}
+              identity={identity}
+              measureRef={pageIndex === 0 ? headerRef : undefined}
+            />
+            {group.map((index) => (
+              <div className="order-sheet-row" key={rows[index].key}>
+                {rows[index].content}
+              </div>
+            ))}
+          </div>
+        ))}
+      </article>
+    </>
   )
 }

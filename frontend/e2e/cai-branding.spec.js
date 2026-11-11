@@ -71,7 +71,7 @@ test('CAI presenta etiquetas y pulgadas sin añadir cálculos a la hoja impresa'
   await expect(specs).not.toContainText('Unidad de medida')
 
   await page.goto(`/cases/${record.id}/print?production_id=${record.production.id}`)
-  const print = page.locator('.cai-print')
+  const print = page.locator('.order-sheet')
   await expect(print).toContainText('Talonario CAI')
   await expect(print).toContainText('Media carta (5.5 × 8.5 pulgadas)')
   for (const excluded of [
@@ -114,6 +114,6 @@ test('CAI presenta etiquetas y pulgadas sin añadir cálculos a la hoja impresa'
     await route.fulfill({ response, json: historical })
   })
   await page.reload()
-  await expect(page.locator('.cai-print .fiscal-document-spec')).toContainText('No especificado')
+  await expect(page.locator('.order-sheet .fiscal-document-spec')).toContainText('No especificado')
   await expect(page.getByRole('img', { name: /QR estable de la orden/ })).toBeVisible()
 })
