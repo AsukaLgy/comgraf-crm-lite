@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, Query
 import hashlib
 import json
 from sqlalchemy import func, select
@@ -6,7 +6,7 @@ from ..db import get_db
 from ..models import Case, Client, Contact, CreationRequest, Draft, Production, SavedView, User
 from .. import schemas as s, services as service
 from ..security import current_user, require
-from ..repository import row, get_case, case_detail, cases_list, case_counts, orders_list, attention_predicates, normalize
+from ..repository import row, get_case, case_detail, cases_list, case_counts, dashboard_data, orders_list, attention_predicates, normalize
 from .common import case_response
 from ..deletion import require_admin, preview_cases, delete_case, retry_file_cleanup
 from pydantic import BaseModel
@@ -45,6 +45,13 @@ def list_cases(request: Request, user=Depends(current_user), db=Depends(get_db, 
 @router.get('/counts')
 def counts(user=Depends(current_user), db=Depends(get_db, scope='function')):
     return case_counts(db, user)
+
+
+@router.get('/dashboard')
+def dashboard(days: int = Query(default=7, ge=7, le=30), user=Depends(current_user), db=Depends(get_db, scope='function')):
+    if days not in (7, 30):
+        raise HTTPException(422, 'El período debe ser 7 o 30 días')
+    return dashboard_data(db, user, days)
 
 
 @router.patch('/cases/{case_id}/title')
@@ -114,7 +121,7 @@ def create_production_request(data: s.ProductionRequestInput, user=Depends(curre
         if previous.request_hash != signature:
             raise HTTPException(409, 'La clave de reintento ya pertenece a otra creación')
         case = get_case(db, user, previous.case_id)
-        production_id = db.scalar(select(Production.id).where(Production.case_id == case.id).order_by(Production.id.desc()).limit(1))
+        production_id = db.scalar(select(Production.id).where(Production.case_id == case.id).order_by(Production.id).limit(1))
         return case_response(db, user, case, production_id)
     if not db.get(Client, data.client_id): raise HTTPException(422, 'Cliente no encontrado')
     contact = db.get(Contact, data.contact_id) if data.contact_id else None
@@ -126,7 +133,7 @@ def create_production_request(data: s.ProductionRequestInput, user=Depends(curre
     service.event(db, case, user, 'Solicitud de orden de producción creada', data={'action': 'created'})
     service.convert(db, user, case.id, data, permission='production')
     db.add(CreationRequest(user_id=user.id, key=data.key, request_hash=signature, case_id=case.id))
-    production_id = db.scalar(select(Production.id).where(Production.case_id == case.id).order_by(Production.id.desc()).limit(1))
+    production_id = db.scalar(select(Production.id).where(Production.case_id == case.id).order_by(Production.id).limit(1))
     return case_response(db, user, case, production_id)
 
 

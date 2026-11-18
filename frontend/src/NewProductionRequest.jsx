@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, money, uid } from './api'
 import { ErrorBox, Field, FormDialog, RadioGroup, Select } from './components'
 import { ClientAutocomplete } from './NewCase'
@@ -21,6 +21,7 @@ export default function NewProductionRequest({ user, onClose }) {
     [advanceError, setAdvanceError] = useState(null)
   const initial = {
     client_id: '',
+    contact_id: '',
     subject: '',
     priority: 'Normal',
     description: '',
@@ -34,6 +35,12 @@ export default function NewProductionRequest({ user, onClose }) {
     instructions: '',
     quote_id: '',
   }
+  const createdOrders = created?.productions?.length
+    ? created.productions
+    : created?.production
+      ? [created.production]
+      : []
+  const multipleOrders = createdOrders.length > 1
   async function save(v) {
     if (!v.client_id) throw new Error('Selecciona un cliente antes de guardar.')
     if (!v.subject.trim()) throw new Error('Escribe el asunto de la solicitud.')
@@ -42,6 +49,7 @@ export default function NewProductionRequest({ user, onClose }) {
     const body = {
       ...v,
       client_id: Number(v.client_id),
+      contact_id: v.contact_id ? Number(v.contact_id) : null,
       priority: v.priority,
       currency: 'HNL',
       quote_id: null,
@@ -64,7 +72,7 @@ export default function NewProductionRequest({ user, onClose }) {
     return false
   }
   async function finish(advance) {
-    if (!created || advancing) return
+    if (!created || advancing || (advance && createdOrders.length !== 1)) return
     if (advance) {
       setAdvancing(true)
       setAdvanceError(null)
@@ -72,7 +80,7 @@ export default function NewProductionRequest({ user, onClose }) {
         await api(`/cases/${created.id}/production/stage`, {
           method: 'POST',
           body: {
-            production_id: created.production.id,
+            production_id: createdOrders[0].id,
             stage: 'PRINTING',
             version: created.version,
             key: uid(),
@@ -85,40 +93,69 @@ export default function NewProductionRequest({ user, onClose }) {
         return
       }
     }
-    navigate(`/cases/${created.id}?tab=production&production_id=${created.production.id}`)
+    navigate(`/cases/${created.id}?tab=production&production_id=${createdOrders[0].id}`)
     onClose()
   }
   return (
     <FormDialog
       wide
       title="Generar orden de producción"
-      submit="Crear solicitud y orden"
+      submit={(values) => `Crear solicitud y ${values.items.length > 1 ? 'órdenes' : 'orden'}`}
       initial={initial}
       onClose={onClose}
       onSave={save}
       afterSave={() => (
         <div className="dialog-body">
           <div className="notice">
-            <strong>Orden creada en Aprobación.</strong>
-            <p>¿Querés pasarla a Impresión ahora?</p>
-            <small>
-              Elegí esta opción si el trabajo ya está aprobado y comenzará a imprimirse.
-            </small>
+            <strong>
+              {multipleOrders
+                ? `${createdOrders.length} órdenes creadas en Aprobación.`
+                : 'Orden creada en Aprobación.'}
+            </strong>
+            {multipleOrders ? (
+              <>
+                <ul>
+                  {createdOrders.map((order) => (
+                    <li key={order.id}>
+                      {order.order_number} · {(order.product_names || []).join(', ')}
+                    </li>
+                  ))}
+                </ul>
+                <small>Podrás avanzar cada orden por separado desde la solicitud.</small>
+              </>
+            ) : (
+              <>
+                <p>¿Querés pasarla a Impresión ahora?</p>
+                <small>
+                  Elegí esta opción si el trabajo ya está aprobado y comenzará a imprimirse.
+                </small>
+              </>
+            )}
           </div>
-          <p>{created?.production?.order_number} quedó guardada en la solicitud.</p>
+          {!multipleOrders && (
+            <p>{createdOrders[0]?.order_number} quedó guardada en la solicitud.</p>
+          )}
           <ErrorBox error={advanceError} />
           <div className="actions">
-            <button type="button" disabled={advancing} onClick={() => finish(false)}>
-              Mantener en Aprobación
-            </button>
-            <button
-              type="button"
-              className="primary"
-              disabled={advancing}
-              onClick={() => finish(true)}
-            >
-              {advancing ? 'Actualizando…' : 'Pasar a Impresión'}
-            </button>
+            {multipleOrders ? (
+              <button type="button" className="primary" onClick={() => finish(false)}>
+                Ver órdenes
+              </button>
+            ) : (
+              <>
+                <button type="button" disabled={advancing} onClick={() => finish(false)}>
+                  Mantener en Aprobación
+                </button>
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={advancing}
+                  onClick={() => finish(true)}
+                >
+                  {advancing ? 'Actualizando…' : 'Pasar a Impresión'}
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -132,8 +169,19 @@ export default function NewProductionRequest({ user, onClose }) {
                 searchEndpoint="/production-clients"
                 user={user}
                 selectedId={v.client_id}
-                onSelect={(client) => set('client_id', String(client.id))}
-                onClear={() => set('client_id', '')}
+                onSelect={(client) => {
+                  set('client_id', String(client.id))
+                  set('contact_id', '')
+                }}
+                onClear={() => {
+                  set('client_id', '')
+                  set('contact_id', '')
+                }}
+              />
+              <ProductionContactField
+                clientId={v.client_id}
+                value={v.contact_id}
+                onChange={(value) => set('contact_id', value)}
               />
               <Field
                 label="Asunto"
@@ -158,6 +206,10 @@ export default function NewProductionRequest({ user, onClose }) {
           </section>
           <section className="integrated-create-section">
             <h3>Trabajo a producir</h3>
+            <div className="notice">
+              Cada producto genera una orden independiente; sus especificaciones y comentarios
+              quedan asociados a esa orden.
+            </div>
             <ItemsEditor items={v.items} onChange={(items) => set('items', items)} />
             <div className="form-grid">
               <Field
@@ -180,7 +232,7 @@ export default function NewProductionRequest({ user, onClose }) {
                 onChange={(value) => set('payment_terms', value)}
               />
               <Field
-                label="Anticipo requerido (HNL)"
+                label="Anticipo recibido (HNL)"
                 type="number"
                 min="0"
                 step="0.01"
@@ -188,6 +240,14 @@ export default function NewProductionRequest({ user, onClose }) {
                 value={v.advance_required}
                 onChange={(e) => set('advance_required', e.target.value)}
               />
+              <small className="full">
+                Se registrará como abono al crear las órdenes y reducirá automáticamente el saldo pendiente.
+              </small>
+              {v.items.length > 1 && (
+                <small className="full">
+                  El anticipo total se distribuye proporcionalmente entre las órdenes.
+                </small>
+              )}
               <Field
                 label="Vencimiento del saldo (si está acordado)"
                 type="date"
@@ -225,5 +285,29 @@ export default function NewProductionRequest({ user, onClose }) {
         </>
       )}
     />
+  )
+}
+
+function ProductionContactField({ clientId, value, onChange }) {
+  const contacts = useQuery({
+    queryKey: ['production-client-contacts', clientId],
+    queryFn: () => api(`/production-clients/${clientId}/contacts`),
+    enabled: Boolean(clientId),
+  })
+  return (
+    <>
+      <Select
+        label="Contacto vinculado (opcional)"
+        options={(contacts.data || []).map((contact) => ({
+          value: String(contact.id),
+          label: contact.name,
+        }))}
+        empty={clientId ? 'Sin contacto específico' : 'Selecciona un cliente primero'}
+        value={value || ''}
+        disabled={!clientId || contacts.isPending}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <ErrorBox error={contacts.error} />
+    </>
   )
 }

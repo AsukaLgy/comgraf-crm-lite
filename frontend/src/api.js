@@ -1,7 +1,7 @@
 import { HNL_CURRENCY, PRODUCT } from './domain.js'
 
 export const API_CONTRACT_VERSION = '5'
-export const PRODUCT_VERSION = '1.5.0'
+export const PRODUCT_VERSION = '1.6.0'
 let contractCheck
 
 const FIELD_NAMES = {

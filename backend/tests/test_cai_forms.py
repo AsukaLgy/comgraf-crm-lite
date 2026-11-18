@@ -184,15 +184,22 @@ def test_new_cai_production_request_is_atomic_and_idempotent(clients, games):
     assert created['items'][0]['product'] == 'Talonario CAI'
     assert created['items'][0]['quantity'] == '1.000'
     assert created['items'][0]['specs']['games_per_pad'] == games
-    assert len(created['items']) == len(items)
+    assert len(created['items']) == 1
+    assert created['production_count'] == len(items)
+    assert [order['product_names'] for order in created['productions']] == [
+        [entry['product']] for entry in items
+    ]
     assert len([event for event in created['events'] if event['data'].get('action') == 'created']) == 1
-    assert len([event for event in created['events'] if event['data'].get('action') == 'converted']) == 1
+    assert len([event for event in created['events'] if event['data'].get('action') == 'converted']) == len(items)
     replay = must(api.post('/api/production-requests', json=payload), 201)
     assert replay['id'] == created['id'] and replay['production']['id'] == created['production']['id']
+    assert [order['id'] for order in replay['productions']] == [order['id'] for order in created['productions']]
     with SessionLocal() as db:
         case_ids = db.scalars(select(Case.id).where(Case.subject == subject)).all()
         assert case_ids == [created['id']]
-        assert db.scalars(select(Production.id).where(Production.case_id == created['id'])).all() == [created['production']['id']]
+        assert db.scalars(select(Production.id).where(Production.case_id == created['id']).order_by(Production.id)).all() == [
+            order['id'] for order in created['productions']
+        ]
 
 
 def test_invalid_cai_quantity_does_not_create_case(clients):

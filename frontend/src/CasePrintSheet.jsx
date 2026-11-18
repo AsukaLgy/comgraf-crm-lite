@@ -73,6 +73,7 @@ function identityFor(record, production) {
     const profileName = record.client?.name || ''
     return {
       ...Object.fromEntries(keys.map((key) => [key, snapshot[key] ?? ''])),
+      contactName: snapshot.contact_id ? snapshot.person || '' : '',
       clientName: hasCapturedName ? snapshot.client_name : profileName,
       clientNameFromProfile: !hasCapturedName && Boolean(profileName),
       historicalFallback: false,
@@ -87,6 +88,7 @@ function identityFor(record, production) {
   return {
     company: client.company || '',
     clientName: client.name || '',
+    contactName: record.case_contact?.name || '',
     clientNameFromProfile: false,
     person: record.case_contact?.name || (!client.company ? client.name : ''),
     rtn: client.rtn || '',
@@ -143,6 +145,7 @@ function sheetRows(items, production, identity) {
             {[
               ['Empresa', identity.company],
               ['Nombre del cliente', identity.clientName],
+              ...(identity.contactName ? [['Contacto vinculado', identity.contactName]] : []),
               ['RTN', identity.rtn],
               ['Teléfono', identity.phone],
               ['Correo', identity.email],

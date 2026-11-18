@@ -211,6 +211,38 @@ def test_atomic_production_request_rolls_back_and_retries_without_duplicates(cli
     assert operator.get('/api/production-clients?q=Alta').status_code == 200
 
 
+def test_production_request_keeps_selected_contact_and_records_received_advance(clients):
+    api = clients['admin']
+    operator = clients['printer']
+    customer = must(api.post('/api/clients', json={'name': 'Contacto de OP'}), 201)
+    contact = must(api.post(f'/api/clients/{customer["id"]}/contacts', json={'name': 'Ana Contacto'}), 201)
+    request = {
+        **conversion(), 'client_id': customer['id'], 'contact_id': contact['id'],
+        'subject': 'Solicitud con contacto y anticipo', 'advance_required': '125.00',
+        'version': 1, 'key': key(),
+    }
+    created = must(operator.post('/api/production-requests', json=request), 201)
+    replay = must(operator.post('/api/production-requests', json=request), 201)
+    detail = must(api.get(f'/api/cases/{created["id"]}?production_id={created["production"]["id"]}'))
+
+    assert created['contact_id'] == contact['id']
+    assert detail['production']['contact_id'] == contact['id']
+    assert detail['production']['client_snapshot']['person'] == 'Ana Contacto'
+    assert detail['balance'] == '875.00'
+    assert [(entry['kind'], entry['amount']) for entry in detail['ledger']] == [
+        ('Obligación', '1000.00'), ('Anticipo', '-125.00')]
+    advance_events = [event for event in detail['events'] if event['data'].get('action') == 'payment']
+    assert len(advance_events) == 1
+    advance_event = advance_events[0]
+    assert advance_event['data'] == {
+        'financial': True, 'action': 'payment', 'production_id': created['production']['id'],
+        'kind': 'Anticipo', 'amount': '125.00',
+        'reference': 'Anticipo recibido al generar OP',
+    }
+    assert replay['id'] == created['id']
+    assert replay['production']['id'] == created['production']['id']
+
+
 def test_complete_delivery_fills_only_historical_pending_quantity(clients):
     api = clients['admin']
     _, case = create(api, 'Saldo histórico de entrega')
@@ -254,7 +286,33 @@ def item():
 
 
 def conversion(owner=None):
-    return {'items':[item()],'committed_date':str(today()+timedelta(days=3)), 'payment_due_date':str(today()-timedelta(days=1)), 'delivery_method':'Retiro en taller','advance_required':'100.00','payment_terms':'Contado'}
+    return {'items':[item()],'committed_date':str(today()+timedelta(days=3)), 'payment_due_date':str(today()-timedelta(days=1)), 'delivery_method':'Retiro en taller','advance_required':'0.00','payment_terms':'Contado'}
+
+
+def test_multi_product_conversion_creates_separate_orders_and_keeps_comments(clients):
+    api=clients['admin'];_,case=create(api,'Productos con instrucciones separadas')
+    case=mutate(api,case,'take')
+    items=[
+        {**item(),'specs':{**item()['specs'],'detail':'Entregar empaquetado por juego'}},
+        {**item(),'product':'Volantes y flyers','quantity':'500','unit_price':'2.00',
+         'specs':{'detail':'Imprimir a doble cara'}},
+    ]
+    created=mutate(api,case,'convert',{**conversion(),'advance_required':'300.00','items':items})
+    orders=created['productions']
+    assert len(orders)==created['production_count']==2
+    assert [order['product_names'] for order in orders]==[['Tarjetas de presentación'],['Volantes y flyers']]
+
+    order_views=[must(api.get(f'/api/cases/{case["id"]}?production_id={order["id"]}')) for order in orders]
+    assert [view['items'][0]['specs']['detail'] for view in order_views]==[
+        'Entregar empaquetado por juego','Imprimir a doble cara']
+    assert all(len(view['items'])==1 for view in order_views)
+    assert [view['production']['price'] for view in order_views]==['1000.00','1000.00']
+    assert [view['production']['advance_required'] for view in order_views]==['150.00','150.00']
+    assert sum(Decimal(view['production']['price']) for view in order_views)==Decimal('2000.00')
+    assert sum(Decimal(view['production']['advance_required']) for view in order_views)==Decimal('300.00')
+    assert [view['balance'] for view in order_views]==['850.00','850.00']
+    assert [entry['amount'] for view in order_views for entry in view['ledger'] if entry['kind']=='Anticipo']==['-150.00','-150.00']
+    assert len([event for event in created['events'] if event['data'].get('action')=='converted'])==2
 
 
 def test_order_navigation_lists_every_order_and_rejects_foreign_selection(clients):
@@ -282,11 +340,10 @@ def test_order_navigation_lists_every_order_and_rejects_foreign_selection(client
 def test_multiple_orders_keep_products_stages_deliveries_and_calendar_separate(clients):
     api=clients['admin'];_,c=create(api,'Paquete para dos sucursales')
     c=mutate(api,c,'take')
-    first_items=[item(),{**item(),'product':'Volantes y flyers','quantity':'500','unit_price':'2.00'}]
-    first=mutate(api,c,'convert',{**conversion(),'items':first_items})
+    first=mutate(api,c,'convert',conversion())
     first_id=first['production']['id']
     assert first['production']['stage']=='APPROVAL' and first['production']['created_by_id']
-    assert first['production_count']==1 and len(first['items'])==2
+    assert first['production_count']==1 and len(first['items'])==1
     assert not any(e['data'].get('action')=='stage' for e in first['events'])
 
     second=mutate(api,first,'convert',{**conversion(),'items':[{**item(),'product':'Banners y lonas','quantity':'2','unit_price':'250.00'}]})
@@ -296,7 +353,7 @@ def test_multiple_orders_keep_products_stages_deliveries_and_calendar_separate(c
     second=mutate(api,second,'production/stage',{'production_id':second_id,'stage':'PRINTING'})
     first_view=must(api.get(f'/api/cases/{c["id"]}?production_id={first_id}'))
     second_view=must(api.get(f'/api/cases/{c["id"]}?production_id={second_id}'))
-    assert first_view['production']['stage']=='APPROVAL' and len(first_view['items'])==2
+    assert first_view['production']['stage']=='APPROVAL' and len(first_view['items'])==1
     assert second_view['production']['stage']=='PRINTING' and len(second_view['items'])==1
     assert first_view['balance']=='2000.00' and second_view['balance']=='500.00'
     assert must(api.get('/api/cases',params={'view':'production','stage':'PRINTING'}))['total']==1
@@ -613,6 +670,8 @@ def test_attention_history_search_and_drafts(clients):
     c=mutate(api,c,'tasks',{'title':'Confirmar información','owner_id':c['owner_id'],'due_at':(datetime.now(timezone.utc)-timedelta(hours=1)).isoformat()})
     assert must(api.get('/api/cases?view=action'))['total']==1
     c=mutate(api,c,f'tasks/{c["tasks"][0]["id"]}/complete')
+    completed=next(e for e in c['events'] if e['data'].get('action')=='task_completed')
+    assert completed['data']['task_id']==c['tasks'][0]['id'] and completed['data']['purpose']=='ATTENTION'
     c=mutate(api,c,'attention',{'status':'Cerrado'})
     assert c['mode']=='Atención' and c['production'] is None
     assert len(c['drafts'])==1
@@ -794,6 +853,8 @@ def test_future_followup_close_then_due_recovery_and_reschedule(clients):
     payload={'version':c['version'],'key':key(),'due_at':new_due.isoformat()}
     c=must(api.put(f'/api/cases/{c["id"]}/tasks/{task["id"]}',json=payload))
     assert c['tasks'][0]['done_at'] is None and c['tasks'][0]['due_at'].startswith((new_due.date()).isoformat())
+    rescheduled=next(e for e in c['events'] if e['data'].get('action')=='task_rescheduled')
+    assert rescheduled['data']['task_id']==task['id'] and rescheduled['data']['purpose']=='ATTENTION'
 
 
 def test_personal_inboxes_include_closed_requests_and_count_only_due_followups(clients):
@@ -868,6 +929,10 @@ def test_weekly_pickup_followup_partial_and_full_delivery(clients):
     assert datetime.fromisoformat(pickup[0]['due_at'].replace('Z','+00:00')).date() >= (datetime.now(timezone.utc)+timedelta(days=6)).date()
     assert api.get('/api/cases?view=ready').json()['total']==1
     c=mutate(api,c,f'tasks/{pickup[0]["id"]}/complete',{'note':'Customer will pick up Friday','schedule_next_pickup':True})
+    completed=next(e for e in c['events'] if e['data'].get('action')=='task_completed')
+    assert completed['data']['task_id']==pickup[0]['id'] and completed['data']['production_id']==c['production']['id']
+    pickup_note=next(e for e in c['events'] if e['body']=='Customer will pick up Friday')
+    assert pickup_note['data']['production_id']==c['production']['id']
     next_task=next(task for task in c['tasks'] if task['category']=='PICKUP' and task['done_at'] is None)
     assert datetime.fromisoformat(next_task['due_at'].replace('Z','+00:00')).date() >= (datetime.now(timezone.utc)+timedelta(days=6)).date()
     c=complete_delivery(api, c)
@@ -1030,6 +1095,9 @@ def test_production_quote_delivery_debt_and_idempotent_payment(clients,accounts)
     c=must(api.post(f'/api/cases/{c["id"]}/payments',json=payment))
     repeated=must(api.post(f'/api/cases/{c["id"]}/payments',json=payment))
     assert repeated['balance']=='900.00' and len(repeated['ledger'])==2
+    payment_event=next(e for e in c['events'] if e['data'].get('action')=='payment')
+    assert payment_event['data']['kind']=='Anticipo'
+    assert payment_event['data']['amount']=='100.00' and payment_event['data']['reference']=='Recibo 001'
     assert c['production']['specs_snapshot']['items'][0]['specs']['material']=='Couché 300 g'
     c=mutate(api,c,'production/block',{'reason':'Falta material'})
     mutate(api,c,'production/stage',{'stage':'READY'},409)
@@ -1105,6 +1173,10 @@ def test_permissions_files_csrf_and_cancellation(clients,accounts):
     c=mutate(api,c,'payments',{'amount':'100','reference':'Anticipo'})
     c=mutate(api,c,'production/cancel',{'reason':'Cliente cancela pedido','treatment':'IMPORTE_FINAL','final_amount':'1000.00'})
     assert c['balance']=='900.00' and len(c['ledger'])==2 and c['production']['cancelled_at']
+    printer=must(clients['printer'].get(f'/api/cases/{c["id"]}'))
+    cancelled=next(e for e in printer['events'] if e['data'].get('action')=='cancelled')
+    assert 'final_amount' not in cancelled['data'] and 'adjustment' not in cancelled['data']
+    assert not any(e['data'].get('action')=='cancellation_resolved' for e in printer['events'])
     assert clients['scanner'].post('/api/scanner/scan',json={'scan_id':'CGOP1:'+c['production']['scan_id']}).status_code==409
 
 
@@ -1117,12 +1189,16 @@ def test_cancellation_final_amount_refunds_and_idempotency(clients):
     c=must(api.post(f'/api/cases/{c["id"]}/production/cancel',json=body))
     assert c['balance']=='-100.00' and c['payment_status']=='A favor'
     assert c['production']['cancellation_final_amount']=='200.00'
+    resolution_event=next(e for e in c['events'] if e['data'].get('action')=='cancellation_resolved')
+    assert resolution_event['data']['financial'] is True
     assert [entry['kind'] for entry in c['ledger']][-1]=='Ajuste de anulación'
     same=must(api.post(f'/api/cases/{c["id"]}/production/cancel',json=body))
     assert same['balance']=='-100.00' and len(same['ledger'])==3
     refund_body={'version':c['version'],'key':key(),'amount':'50.00','reference':'Transferencia 01'}
     c=must(api.post(f'/api/cases/{c["id"]}/production/refunds',json=refund_body))
     assert c['balance']=='-50.00'
+    refund_event=next(e for e in c['events'] if e['data'].get('action')=='refund')
+    assert refund_event['data']['financial'] is True
     over={**refund_body,'version':c['version'],'key':key(),'amount':'50.01'}
     assert api.post(f'/api/cases/{c["id"]}/production/refunds',json=over).status_code==422
     refund_body['version']=c['version']

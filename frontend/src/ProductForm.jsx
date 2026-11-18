@@ -502,10 +502,14 @@ export function cleanItems(items) {
 function ClientIdentity({ record, user, v, set }) {
   const qc = useQueryClient(),
     client = record.client
+  const canReadContacts = can(user, 'clients') || can(user, 'production')
+  const contactsEndpoint = can(user, 'clients')
+    ? `/clients/${client.id}/contacts`
+    : `/production-clients/${client.id}/contacts`
   const contactsQuery = useQuery({
-    queryKey: ['client-contacts', client.id],
-    queryFn: () => api(`/clients/${client.id}/contacts`),
-    enabled: can(user, 'clients'),
+    queryKey: ['client-contacts', client.id, can(user, 'clients') ? 'full' : 'production'],
+    queryFn: () => api(contactsEndpoint),
+    enabled: canReadContacts,
   })
   const contacts = contactsQuery.data || []
   const [editing, setEditing] = useState(false),
@@ -796,9 +800,14 @@ export default function ProductForm({
       qc.setQueryData(['case', String(record.id), String(result.production?.id || '')], result)
       await qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'case' })
       if (!quote) {
-        setCreated(result.production)
+        const existingOrderIds = new Set((record.productions || []).map((order) => order.id))
+        const newOrders = (result.productions || []).filter(
+          (order) => !existingOrderIds.has(order.id),
+        )
+        const orders = newOrders.length ? newOrders : result.production ? [result.production] : []
+        setCreated(orders)
         setCreatedVersion(result.version)
-        onCreated?.(result.production)
+        onCreated?.(orders.at(-1))
         setAdvanceError(null)
         return false
       }
@@ -809,21 +818,22 @@ export default function ProductForm({
     }
   }
   async function advance() {
-    if (!created) return
+    if (created?.length !== 1) return
+    const production = created[0]
     setAdvancing(true)
     setAdvanceError(null)
     try {
       const result = await api(`/cases/${record.id}/production/stage`, {
         method: 'POST',
         body: {
-          production_id: created.id,
+          production_id: production.id,
           stage: 'PRINTING',
           reason: '',
           version: createdVersion,
           key: uid(),
         },
       })
-      qc.setQueryData(['case', String(record.id), String(created.id)], result)
+      qc.setQueryData(['case', String(record.id), String(production.id)], result)
       await qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'case' })
       onClose()
     } catch (error) {
@@ -832,6 +842,7 @@ export default function ProductForm({
       setAdvancing(false)
     }
   }
+  const multipleOrders = created?.length > 1
   return (
     <FormDialog
       wide
@@ -839,28 +850,65 @@ export default function ProductForm({
       initial={initial}
       onClose={onClose}
       onSave={save}
-      submit={quote ? 'Guardar cotización' : 'Generar orden de producción'}
+      submit={
+        quote
+          ? 'Guardar cotización'
+          : (values) =>
+              values.items.length > 1
+                ? 'Generar órdenes de producción'
+                : 'Generar orden de producción'
+      }
       afterSave={() => (
         <div className="dialog-body">
           <div className="notice">
-            <strong>Orden creada en Aprobación.</strong>
-            <p>¿Querés pasarla a Impresión ahora?</p>
-            <small>
-              Elegí Impresión si el trabajo ya está aprobado y va a comenzar a imprimirse.
-            </small>
+            <strong>
+              {multipleOrders
+                ? `${created.length} órdenes creadas en Aprobación.`
+                : 'Orden creada en Aprobación.'}
+            </strong>
+            {multipleOrders ? (
+              <>
+                <ul>
+                  {created.map((order) => (
+                    <li key={order.id}>
+                      {order.order_number} · {(order.product_names || []).join(', ')}
+                    </li>
+                  ))}
+                </ul>
+                <small>Podrás avanzar cada orden por separado desde la solicitud.</small>
+              </>
+            ) : (
+              <>
+                <p>¿Querés pasarla a Impresión ahora?</p>
+                <small>
+                  Elegí Impresión si el trabajo ya está aprobado y va a comenzar a imprimirse.
+                </small>
+              </>
+            )}
           </div>
-          <p>
-            {created?.order_number || `OP-${String(created?.id || '').padStart(5, '0')}`} queda
-            guardada en la solicitud.
-          </p>
+          {!multipleOrders && (
+            <p>
+              {created?.[0]?.order_number ||
+                `OP-${String(created?.[0]?.id || '').padStart(5, '0')}`}{' '}
+              queda guardada en la solicitud.
+            </p>
+          )}
           <ErrorBox error={advanceError} />
           <div className="actions">
-            <button type="button" onClick={onClose}>
-              Mantener en Aprobación
-            </button>
-            <button type="button" className="primary" disabled={advancing} onClick={advance}>
-              {advancing ? 'Actualizando…' : 'Pasar a Impresión'}
-            </button>
+            {multipleOrders ? (
+              <button type="button" className="primary" onClick={onClose}>
+                Ver órdenes
+              </button>
+            ) : (
+              <>
+                <button type="button" onClick={onClose}>
+                  Mantener en Aprobación
+                </button>
+                <button type="button" className="primary" disabled={advancing} onClick={advance}>
+                  {advancing ? 'Actualizando…' : 'Pasar a Impresión'}
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -869,7 +917,7 @@ export default function ProductForm({
           <div className="notice">
             {quote
               ? 'Cotizar no inicia fabricación. Cada versión conserva sus productos e importes en lempiras.'
-              : 'Esta orden se agregará a la solicitud en la etapa Aprobación. Agregá todos los productos que compartirán etapa y programación.'}
+              : 'Cada producto genera una orden independiente en Aprobación, con sus especificaciones y comentarios. Las órdenes podrán avanzar por separado.'}
           </div>
           {!quote && <ClientIdentity record={record} user={user} v={v} set={set} />}
           {oldUsd && (
@@ -902,7 +950,7 @@ export default function ProductForm({
             <>
               <div className="notice">
                 Se reutilizarán los productos y precios de la versión aceptada.{' '}
-                <Badge>{v.items.length} productos</Badge>
+                <Badge>{v.items.length} productos · una OP por producto</Badge>
               </div>
               {selectedQuote(v.quote_id)?.items?.some(
                 (item) =>
@@ -956,7 +1004,7 @@ export default function ProductForm({
                   onChange={(value) => set('payment_terms', value)}
                 />
                 <Field
-                  label="Anticipo requerido (HNL)"
+                  label="Anticipo recibido (HNL)"
                   type="number"
                   min="0"
                   step="0.01"
@@ -964,6 +1012,14 @@ export default function ProductForm({
                   value={v.advance_required}
                   onChange={(e) => set('advance_required', e.target.value)}
                 />
+                <small className="full">
+                  Se registrará como abono al crear las órdenes y reducirá automáticamente el saldo pendiente.
+                </small>
+                {v.items.length > 1 && (
+                  <small className="full">
+                    El anticipo total se distribuye proporcionalmente entre las órdenes.
+                  </small>
+                )}
                 <Field
                   label="Vencimiento del saldo (si está acordado)"
                   type="date"

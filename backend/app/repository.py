@@ -1,6 +1,6 @@
 import re
 import unicodedata
-from datetime import datetime, timezone, date as date_type, timedelta
+from datetime import datetime, time, timezone, date as date_type, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 from fastapi import HTTPException
@@ -556,6 +556,70 @@ def case_counts(db, user):
         result['ready_orders'] = orders_count(db, user, 'ready')
         result['ready'] = result['ready_orders']
         return result
+
+
+def dashboard_data(db, user, days=7):
+    if days not in (7, 30):
+        raise HTTPException(422, 'El período del panel debe ser de 7 o 30 días')
+
+    zone = ZoneInfo(settings.app_timezone)
+    end_day = today()
+    start_day = end_day - timedelta(days=days - 1)
+    start_utc = datetime.combine(start_day, time.min, tzinfo=zone).astimezone(timezone.utc).replace(tzinfo=None)
+    trend = [
+        {
+            'date': (start_day + timedelta(days=offset)).isoformat(),
+            'requests': 0,
+            'orders': 0,
+        }
+        for offset in range(days)
+    ]
+    points = {point['date']: point for point in trend}
+    action = Event.data['action'].as_string()
+    trend_events = db.execute(
+        select(Event.created_at, action)
+        .join(Case, Case.id == Event.case_id)
+        .where(
+            visibility(db, user),
+            Event.created_at >= start_utc,
+            action.in_(('created', 'converted')),
+        )
+    ).all()
+    for created_at, event_action in trend_events:
+        point = points.get(local_day(created_at).isoformat())
+        if point:
+            point['requests' if event_action == 'created' else 'orders'] += 1
+
+    commercial = can(db, user, 'finance') or can(db, user, 'attention')
+    activity = []
+    recent_events = db.execute(
+        select(Event, Case, Client, User)
+        .join(Case, Case.id == Event.case_id)
+        .join(Client, Client.id == Case.client_id)
+        .outerjoin(User, User.id == Event.actor_id)
+        .where(visibility(db, user))
+        .order_by(Event.created_at.desc(), Event.id.desc())
+        .limit(100)
+    ).all()
+    for event, case, client, actor in recent_events:
+        if event.data.get('financial') and not commercial:
+            continue
+        activity.append({
+            'id': event.id,
+            'case_id': case.id,
+            'case_number': f'CG-{case.id:06d}',
+            'subject': case.subject,
+            'client': client.name,
+            'actor': actor.name if actor else 'Sistema',
+            'kind': event.kind,
+            'body': event.body,
+            'action': event.data.get('action'),
+            'created_at': row(event)['created_at'],
+        })
+        if len(activity) == 8:
+            break
+
+    return {'counts': case_counts(db, user), 'trend': trend, 'activity': activity}
 
 
 def _order_query(db, user, view, filters=None):

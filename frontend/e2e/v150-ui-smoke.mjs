@@ -89,7 +89,7 @@ for (const [name, viewport] of [
         timezone: 'America/Tegucigalpa',
       }
     else if (path === '/api/version')
-      body = { product_version: '1.5.0', contract_version: '5', commit: 'test' }
+      body = { product_version: '1.6.0', contract_version: '5', commit: 'test' }
     else if (path === '/api/counts') body = {}
     else if (path === '/api/users') {
       usersRequests++

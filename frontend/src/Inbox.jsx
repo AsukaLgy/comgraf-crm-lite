@@ -38,7 +38,12 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
   const location = useLocation(),
     qc = useQueryClient(),
     nav = useNavigate(),
-    [modal, setModal] = useState(null),
+    [modal, setModal] = useState(() => {
+      const params = new URLSearchParams(location.search)
+      if (params.get('new') === '1' && can(user, 'attention')) return 'new'
+      if (params.get('newProduction') === '1' && can(user, 'production')) return 'production-create'
+      return null
+    }),
     [advanced, setAdvanced] = useState(false)
   const poolView = !home && !search && view === 'pool'
   const orderView =
@@ -58,6 +63,8 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
         ...(JSON.parse(sessionStorage.getItem(key)) || {}),
         ...Object.fromEntries(new URLSearchParams(location.search)),
       }
+      delete stored.new
+      delete stored.newProduction
       if (['action', 'mine-action'].includes(view)) {
         delete stored.status
         delete stored.lifecycle
@@ -133,6 +140,12 @@ export default function Inbox({ user, view = 'pool', home = false, search = fals
   useEffect(() => {
     sessionStorage.setItem(key, JSON.stringify(compatibleFilters))
   }, [compatibleFilters, key])
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    if (params.has('new') || params.has('newProduction')) {
+      nav(location.pathname, { replace: true })
+    }
+  }, [location.pathname, location.search, nav])
   useEffect(() => {
     if (list.data) {
       const position = Number(sessionStorage.getItem(key + '.scroll') || 0)

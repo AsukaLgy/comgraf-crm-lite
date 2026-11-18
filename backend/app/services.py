@@ -3,7 +3,7 @@ import json
 import uuid
 from copy import deepcopy
 from datetime import timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 from fastapi import HTTPException
 from sqlalchemy import select, func
 from .models import Case, Client, Contact, Delivery, Event, Idempotency, Item, Ledger, PartialReleaseRequest, Production, Quote, Task, User, now
@@ -248,7 +248,7 @@ def add_task(db, user, case_id, data):
                 owner_id=data.owner_id, purpose=data.purpose, title=data.title, due_at=data.due_at))
     if data.purpose == 'ATTENTION': case.next_action = data.title
     event(db, case, user, f"{'Seguimiento de cobro' if data.purpose == 'COLLECTION' else 'Seguimiento de atención'} programado: {data.title}",
-          data={'due_at': data.due_at.isoformat() + 'Z', 'owner_id': data.owner_id,
+          data={'action': 'task_created', 'due_at': data.due_at.isoformat() + 'Z', 'owner_id': data.owner_id,
                 'purpose': data.purpose, 'production_id': production.id if production else None})
     if data.purpose == 'ATTENTION' and data.due_at <= now() and case.status == 'Cerrado':
         old = case.status
@@ -282,9 +282,13 @@ def complete_task(db, user, case_id, task_id, data):
         fail('No se puede programar otro seguimiento de recogida para esta orden')
     if data.schedule_next_pickup and task.production_id != production.id: fail('El seguimiento pertenece a otra orden', 409)
     task.done_at = now()
-    event(db, case, user, f'Seguimiento completado: {task.title}')
+    event(db, case, user, f'Seguimiento completado: {task.title}', data={
+        'action': 'task_completed', 'task_id': task.id, 'production_id': task.production_id,
+        'purpose': task.purpose, 'category': task.category})
     if data.note.strip():
-        event(db, case, user, data.note.strip(), 'Nota interna', 'Nota', {'direction': 'Interna', 'manual': True, 'source': 'pickup_followup'})
+        event(db, case, user, data.note.strip(), 'Nota interna', 'Nota', {
+            'direction': 'Interna', 'manual': True, 'source': 'pickup_followup',
+            'production_id': task.production_id})
     if data.schedule_next_pickup:
         due_at = now() + timedelta(days=7)
         next_task = Task(case_id=case.id, production_id=production.id, owner_id=case.owner_id, category='PICKUP', title='Contactar al cliente por trabajo listo para recoger', due_at=due_at)
@@ -309,7 +313,10 @@ def reschedule_task(db, user, case_id, task_id, data):
     if task.done_at: fail('No se puede reprogramar un seguimiento completado', 409)
     previous = task.due_at
     task.due_at = data.due_at
-    event(db, case, user, f'Seguimiento reprogramado: {task.title}', data={'action': 'task_rescheduled', 'task_id': task.id, 'previous_due_at': previous.isoformat() + 'Z', 'due_at': data.due_at.isoformat() + 'Z'})
+    event(db, case, user, f'Seguimiento reprogramado: {task.title}', data={
+        'action': 'task_rescheduled', 'task_id': task.id, 'production_id': task.production_id,
+        'purpose': task.purpose, 'previous_due_at': previous.isoformat() + 'Z',
+        'due_at': data.due_at.isoformat() + 'Z'})
     if task.purpose == 'ATTENTION' and data.due_at <= now() and case.status == 'Cerrado':
         old = case.status
         case.status = 'Abierto'
@@ -338,6 +345,29 @@ def total(items):
     if amount > Decimal('999999999999.99'):
         fail('El importe total supera el máximo permitido')
     return amount
+
+
+def _allocate_money(amount, weights):
+    """Split a cent amount proportionally, preserving its exact total."""
+    cents = int((Decimal(amount).quantize(Decimal('.01'), rounding=ROUND_HALF_UP) * 100))
+    if not weights:
+        return []
+    if cents == 0:
+        return [Decimal('0.00') for _ in weights]
+    weight_total = sum(weights, Decimal('0'))
+    if weight_total <= 0:
+        fail('No se puede distribuir un importe entre productos sin precio')
+    shares = [Decimal(cents) * weight / weight_total for weight in weights]
+    allocations = [int(share.to_integral_value(rounding=ROUND_DOWN)) for share in shares]
+    cents_left = cents - sum(allocations)
+    order = sorted(
+        (index for index, weight in enumerate(weights) if weight > 0),
+        key=lambda index: (shares[index] - allocations[index], -index),
+        reverse=True,
+    )
+    for index in order[:cents_left]:
+        allocations[index] += 1
+    return [Decimal(value) / 100 for value in allocations]
 
 
 # ---- Cotizaciones y ampliación del expediente a producción ----
@@ -467,30 +497,57 @@ def convert(db, user, case_id, data, *, permission='attention'):
     }
     price = total(items)
     if data.advance_required > price: fail('El anticipo no puede superar el precio')
-    production = Production(case_id=case.id, created_by_id=user.id, quote_id=data.quote_id, contact_id=contact.id if contact else None,
-        client_snapshot=client_snapshot, stage='APPROVAL',
-        requested_date=data.requested_date, original_committed_date=data.committed_date,
-        committed_date=data.committed_date, price=price, currency=CURRENCY_HNL,
-        payment_terms=data.payment_terms, advance_required=data.advance_required,
-        payment_due_date=data.payment_due_date, delivery_method=data.delivery_method, instructions=data.instructions)
-    db.add(production)
+    item_values = [Decimal(item['quantity']) * Decimal(item['unit_price']) for item in items]
+    order_prices = _allocate_money(price, item_values)
+    order_advances = _allocate_money(data.advance_required, order_prices)
+    case.mode = 'Producción'
+    quote_number = f'COT-{quote.id:05d}' if quote else None
+    productions = [
+        Production(case_id=case.id, created_by_id=user.id,
+            quote_id=data.quote_id if index == 0 else None,
+            contact_id=contact.id if contact else None, client_snapshot=client_snapshot,
+            stage='APPROVAL', requested_date=data.requested_date,
+            original_committed_date=data.committed_date, committed_date=data.committed_date,
+            price=order_price, currency=CURRENCY_HNL, payment_terms=data.payment_terms,
+            advance_required=order_advance, payment_due_date=data.payment_due_date,
+            delivery_method=data.delivery_method, instructions=data.instructions)
+        for index, (order_price, order_advance) in enumerate(zip(order_prices, order_advances))
+    ]
+    db.add_all(productions)
     db.flush()
-    order_items = [Item(case_id=case.id, production_id=production.id, **item) for item in items]
+    order_items = [
+        Item(case_id=case.id, production_id=production.id, **item)
+        for production, item in zip(productions, items)
+    ]
     db.add_all(order_items)
     db.flush()
-    production.specs_snapshot = {'items': [{**row(item, ('substage',)), **({'cai_summary': cai_summary({'product': item.product, 'quantity': item.quantity, 'specs': item.specs})} if uses_print_form(item.product) else {})} for item in order_items]}
-    db.add(Ledger(case_id=case.id, production_id=production.id, kind='Obligación', amount=price, currency=CURRENCY_HNL,
-        due_date=data.payment_due_date, reference='Orden de producción', actor_id=user.id))
-    case.mode = 'Producción'
-    order_number = f'OP-{case.id:05d}'
-    quote_number = f'COT-{quote.id:05d}' if quote else None
-    order_number = f'OP-{production.id:05d}'
-    body = f'{user.name} creó {order_number} en Aprobación'
-    if quote:
-        body += f' a partir de la cotización {quote_number}, versión {quote.version}'
-    event(db, case, user, body, data={'action': 'converted', 'order_id': production.id, 'order_number': order_number, 'stage': 'APPROVAL',
-        'quote_id': quote.id if quote else None, 'quote_number': quote_number,
-        'quote_version': quote.version if quote else None, 'currency': CURRENCY_HNL})
+    for production, order_item, order_price, order_advance in zip(productions, order_items, order_prices, order_advances):
+        snapshot_item = row(order_item, ('substage',))
+        if uses_print_form(order_item.product):
+            snapshot_item['cai_summary'] = cai_summary({
+                'product': order_item.product,
+                'quantity': order_item.quantity,
+                'specs': order_item.specs,
+            })
+        production.specs_snapshot = {'items': [snapshot_item]}
+        db.add(Ledger(case_id=case.id, production_id=production.id, kind='Obligación', amount=order_price, currency=CURRENCY_HNL,
+            due_date=data.payment_due_date, reference='Orden de producción', actor_id=user.id))
+        if order_advance:
+            db.add(Ledger(case_id=case.id, production_id=production.id, kind='Anticipo', amount=-order_advance, currency=CURRENCY_HNL,
+                reference='Anticipo recibido al generar OP', actor_id=user.id))
+        order_number = f'OP-{production.id:05d}'
+        body = f'{user.name} creó {order_number} en Aprobación'
+        if quote:
+            body += f' a partir de la cotización {quote_number}, versión {quote.version}'
+        event(db, case, user, body, data={'action': 'converted', 'order_id': production.id, 'order_number': order_number, 'stage': 'APPROVAL',
+            'quote_id': quote.id if quote else None, 'quote_number': quote_number,
+            'quote_version': quote.version if quote else None, 'currency': CURRENCY_HNL})
+        if order_advance:
+            event(db, case, user,
+                f'Anticipo OP-{production.id:05d}: {order_advance:.2f} {CURRENCY_HNL}. Anticipo recibido al generar OP.',
+                data={'financial': True, 'action': 'payment', 'production_id': production.id,
+                      'kind': 'Anticipo', 'amount': f'{order_advance:.2f}',
+                      'reference': 'Anticipo recibido al generar OP'})
     return case
 
 
@@ -926,12 +983,9 @@ def cancel(db, user, case_id, data):
         resolve_cancellation(db, user, case, production, data)
     else:
         production.cancellation_review_pending = True
-    totals = cancellation_financials(db, case.id, production.id)
     event(db, case, user, f'OP-{production.id:05d} anulada: {data.reason}', data={'action': 'cancelled', 'production_id': production.id, 'reason': data.reason,
         'stage': production.cancelled_stage, 'seconds': duration,
-        'economic_status': 'resolved' if not production.cancellation_review_pending else 'review_pending',
-        'final_amount': str(production.cancellation_final_amount) if production.cancellation_final_amount is not None else None,
-        'adjustment': str(totals.get('adjustment', Decimal('0')))})
+        'economic_status': 'resolved' if not production.cancellation_review_pending else 'review_pending'})
     complete_resolved_production(db, case, user, 'cancellation_resolved')
     return case
 
@@ -983,7 +1037,7 @@ def resolve_cancellation(db, user, case, production, data):
     production.cancellation_actor_id = user.id
     resulting_balance = totals['current_balance'] + adjustment
     event(db, case, user, f'Anulación resuelta para OP-{production.id:05d}: cargo final {final_amount} HNL; ajuste {adjustment} HNL', data={
-        'action': 'cancellation_resolved', 'production_id': production.id, 'reason': data.reason, 'treatment': data.treatment,
+        'financial': True, 'action': 'cancellation_resolved', 'production_id': production.id, 'reason': data.reason, 'treatment': data.treatment,
         'final_amount': str(final_amount), 'previous_charges': str(totals['charges']),
         'net_payments_received': str(totals['net_received']), 'adjustment': str(adjustment),
         'resulting_balance': str(resulting_balance), 'actor_id': user.id,
@@ -1004,8 +1058,9 @@ def refund(db, user, case_id, data):
     if data.amount > due: fail('La devolución supera el saldo a favor pendiente')
     db.add(Ledger(case_id=case.id, production_id=production.id, kind='Devolución', amount=data.amount, currency=production.currency,
         reference=data.reference, reason='Devolución realizada y confirmada por el usuario', actor_id=user.id))
-    event(db, case, user, f'Devolución registrada: {data.amount} {production.currency}. {data.reference}',
-        data={'action': 'refund', 'amount': str(data.amount), 'reference': data.reference, 'actor_id': user.id})
+    event(db, case, user, f'Devolución registrada: {data.amount:.2f} {production.currency}. {data.reference}',
+        data={'financial': True, 'action': 'refund', 'production_id': production.id,
+              'amount': f'{data.amount:.2f}', 'reference': data.reference, 'actor_id': user.id})
     complete_resolved_production(db, case, user, 'refund')
     return case
 
@@ -1032,7 +1087,9 @@ def deliver(db, user, case_id, data):
         current_balance = Decimal(balance(db, case.id, production.id)['balance'])
         if current_balance <= 0 or payment_amount > current_balance: fail('El pago debe ser positivo y no superar el saldo actual')
         db.add(Ledger(case_id=case.id, production_id=production.id, kind='Abono', amount=-payment_amount, currency=production.currency, reference=payment_reference, actor_id=user.id))
-        event(db, case, user, f'Abono OP-{production.id:05d}: {payment_amount} {production.currency}. {payment_reference}', data={'financial': True, 'action': 'payment', 'production_id': production.id})
+        event(db, case, user, f'Abono OP-{production.id:05d}: {payment_amount} {production.currency}. {payment_reference}',
+              data={'financial': True, 'action': 'payment', 'production_id': production.id,
+                    'kind': 'Abono', 'amount': f'{payment_amount:.2f}', 'reference': payment_reference})
     event(db, case, user, f'Entrega OP-{production.id:05d}: {quantity_text(data.quantity)} {item.unit} de {item.product} a {data.receiver}', data={'action': 'delivery', 'production_id': production.id, 'item_id': item.id, 'on_time_original': bool(production.original_committed_date and local_day(data.delivered_at) <= production.original_committed_date)})
     if delivery_status(db, case.id, production.id) == 'Completa':
         duration = (now() - production.stage_started_at).total_seconds()
@@ -1098,10 +1155,12 @@ def deliver_complete(db, user, case_id, data):
     if data.payment_amount is not None or remaining_balance > 0:
         event(db, case, user,
               f'Situación de cobro OP-{production.id:05d}: '
-              + (f'Abono {data.payment_amount} {production.currency}. {data.payment_reference}. ' if data.payment_amount is not None else '')
-              + (f'Saldo {remaining_balance} {production.currency}. {balance_reason}' if remaining_balance > 0 else 'Pagado.'),
+              + (f'Abono {data.payment_amount:.2f} {production.currency}. {data.payment_reference}. ' if data.payment_amount is not None else '')
+              + (f'Saldo {remaining_balance:.2f} {production.currency}. {balance_reason}' if remaining_balance > 0 else 'Pagado.'),
               data={'financial': True, 'action': 'delivery_collection', 'production_id': production.id,
-                    'payment_amount': str(data.payment_amount) if data.payment_amount is not None else None,
+                    'payment_kind': 'Abono' if data.payment_amount is not None else None,
+                    'payment_amount': f'{data.payment_amount:.2f}' if data.payment_amount is not None else None,
+                    'payment_reference': data.payment_reference,
                     'balance_reason': balance_reason if remaining_balance > 0 else None})
     resolve_delivered_pickup_followups(db, case, production, user)
     complete_resolved_production(db, case, user, 'delivery_collection' if data.payment_amount is not None else 'delivery_completed')
@@ -1116,7 +1175,9 @@ def pay(db, user, case_id, data):
     db.add(Ledger(case_id=case.id, production_id=production.id, kind=data.kind, amount=-data.amount, currency=production.currency, reference=data.reference, actor_id=user.id))
     db.flush()
     resolve_paid_collection_followups(db, case, production, user)
-    event(db, case, user, f'{data.kind} OP-{production.id:05d}: {data.amount} {production.currency}. {data.reference}', data={'financial': True, 'action': 'payment', 'production_id': production.id})
+    event(db, case, user, f'{data.kind} OP-{production.id:05d}: {data.amount:.2f} {production.currency}. {data.reference}',
+          data={'financial': True, 'action': 'payment', 'production_id': production.id,
+                'kind': data.kind, 'amount': f'{data.amount:.2f}', 'reference': data.reference})
     complete_resolved_production(db, case, user, 'payment')
     return case
 
@@ -1130,7 +1191,9 @@ def adjust(db, user, case_id, data):
     db.add(Ledger(case_id=case.id, production_id=production.id, kind='Ajuste', amount=data.amount, currency=production.currency, due_date=data.due_date, reference='Ajuste autorizado', reason=data.reason, actor_id=user.id))
     db.flush()
     resolve_paid_collection_followups(db, case, production, user)
-    event(db, case, user, f'Ajuste OP-{production.id:05d}: {data.amount} {production.currency}. {data.reason}', data={'financial': True, 'production_id': production.id})
+    event(db, case, user, f'Ajuste OP-{production.id:05d}: {data.amount:.2f} {production.currency}. {data.reason}',
+          data={'financial': True, 'action': 'adjustment', 'production_id': production.id,
+                'amount': f'{data.amount:.2f}', 'reason': data.reason})
     complete_resolved_production(db, case, user, 'adjustment')
     return case
 
@@ -1179,5 +1242,8 @@ def reverse_payment(db, user, case_id, entry_id, data):
     production = get_production(db, case, data.production_id)
     if entry.production_id != production.id: fail('El pago pertenece a otra orden', 409)
     db.add(Ledger(case_id=case.id, production_id=production.id, kind='Reversión de pago', amount=-entry.amount, currency=entry.currency, due_date=production.payment_due_date, reference=f'Reversión #{entry.id}', reason=data.reason, reverses_id=entry.id, actor_id=user.id))
-    event(db, case, user, f'Pago #{entry.id} de OP-{production.id:05d} revertido: {data.reason}', data={'financial': True, 'production_id': production.id})
+    event(db, case, user, f'Pago #{entry.id} de OP-{production.id:05d} revertido: {data.reason}',
+          data={'financial': True, 'action': 'payment_reversed', 'production_id': production.id,
+                'entry_id': entry.id, 'amount': str(-entry.amount), 'kind': entry.kind,
+                'reference': entry.reference, 'reason': data.reason})
     return case

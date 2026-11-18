@@ -5,7 +5,7 @@ from test_workflows import create, conversion, key, must, mutate
 
 def test_version_reports_product_and_independent_contract(clients):
     version = must(clients['admin'].get('/api/version'))
-    assert version['product_version'] == '1.5.0'
+    assert version['product_version'] == '1.6.0'
     assert version['contract_version'] == '5'
     assert version['commit'] and version['build_date']
 

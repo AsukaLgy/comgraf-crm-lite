@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     upload_dir: str = '../uploads'
     static_dir: str = '../frontend/dist'
-    build_id: str = 'local-1.5.0'
+    build_id: str = 'local-1.6.0'
     comgraf_build_commit: str = 'unknown'
     comgraf_build_date: str = 'unknown'
 

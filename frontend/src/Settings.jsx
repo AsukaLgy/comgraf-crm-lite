@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, can } from './api'
+import { api, can, PRODUCT_VERSION } from './api'
 import { Badge, ErrorBox, Field, FormDialog, Loading, Panel } from './components'
 import { permissionInfo } from './permissionCatalog'
 import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from './domain'
@@ -13,6 +13,47 @@ const ROLES = [
   'Producción',
   'Cobranza',
   'Escáner de encuadernación',
+]
+
+const TECHNOLOGIES = [
+  ['Aplicación', 'Comgraf', PRODUCT_VERSION],
+  ['Runtime', 'Node.js', '24.11.1'],
+  ['Runtime', 'Python', '3.14'],
+  ['Base de datos', 'MySQL (Compose)', '8.4.11'],
+  ['Base de datos', 'MySQL (perfil ligero)', '8.4.13-1debian12'],
+  ['Proxy', 'Caddy', '2.11.7'],
+  ['Frontend', '@fontsource/inter', '5.3.0'],
+  ['Frontend', '@fontsource/jetbrains-mono', '5.3.0'],
+  ['Frontend', '@tanstack/react-query', '5.90.21'],
+  ['Frontend', '@zxing/browser', '0.2.1'],
+  ['Frontend', 'lucide-react', '0.577.0'],
+  ['Frontend', 'qrcode', '1.5.4'],
+  ['Frontend', 'React', '19.2.4'],
+  ['Frontend', 'React DOM', '19.2.4'],
+  ['Frontend', 'React Router', '7.18.4'],
+  ['Frontend · desarrollo', '@eslint/js', '9.39.5'],
+  ['Frontend · desarrollo', '@playwright/test', '1.58.2'],
+  ['Frontend · desarrollo', '@vitejs/plugin-react', '5.1.4'],
+  ['Frontend · desarrollo', 'ESLint', '9.39.5'],
+  ['Frontend · desarrollo', 'eslint-plugin-react', '7.37.5'],
+  ['Frontend · desarrollo', 'eslint-plugin-react-hooks', '7.1.1'],
+  ['Frontend · desarrollo', 'globals', '17.13.0'],
+  ['Frontend · desarrollo', 'Prettier', '3.9.10'],
+  ['Frontend · desarrollo', 'Vite', '7.3.7'],
+  ['Backend', 'FastAPI', '0.135.1'],
+  ['Backend', 'Uvicorn', '0.41.0'],
+  ['Backend', 'SQLAlchemy', '2.0.48'],
+  ['Backend', 'Alembic', '1.18.4'],
+  ['Backend', 'PyMySQL', '1.1.2'],
+  ['Backend', 'pwdlib', '0.3.0'],
+  ['Backend', 'python-multipart', '0.0.22'],
+  ['Backend', 'pydantic-settings', '2.13.1'],
+  ['Backend', 'Pydantic', '2.14.1'],
+  ['Backend', 'cryptography', '50.0.2'],
+  ['Backend', 'tzdata', '2025.3'],
+  ['Backend · desarrollo', 'HTTPX', '0.28.1'],
+  ['Backend · desarrollo', 'pytest', '9.0.2'],
+  ['Backend · desarrollo', 'Ruff', '0.17.1'],
 ]
 
 export default function Settings({ user }) {
@@ -134,6 +175,32 @@ export default function Settings({ user }) {
           Datos compartidos en MySQL. Adjuntos almacenados en el servidor. Los respaldos deben
           incluir ambos.
         </p>
+      </Panel>
+      <Panel title="Versiones de tecnologías y herramientas">
+        <p className="muted">
+          Solo referencia. Dependencias según los archivos de bloqueo y runtimes según la
+          configuración de construcción y despliegue.
+        </p>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Área</th>
+                <th>Tecnología o herramienta</th>
+                <th>Versión</th>
+              </tr>
+            </thead>
+            <tbody>
+              {TECHNOLOGIES.map(([area, name, version]) => (
+                <tr key={`${area}-${name}`}>
+                  <td>{area}</td>
+                  <td>{name}</td>
+                  <td>{version}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Panel>
 
       {modal?.type === 'user' && (
