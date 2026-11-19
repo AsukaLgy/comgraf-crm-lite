@@ -1,0 +1,31 @@
+# Inventario y plan para datos heredados
+
+Este inventario documenta campos y tablas históricos que aún conviven con flujos vigentes. No propone ni ejecuta borrados, migraciones ni anonimización. La antigüedad o falta de un consumidor directo no prueba que los datos sean prescindibles. La comprobación se hizo contra [models.py](../backend/app/models.py), [repository.py](../backend/app/repository.py), [services.py](../backend/app/services.py), las revisiones Alembic y [RETIRADA_MENSAJERIA.md](RETIRADA_MENSAJERIA.md).
+
+## Inventario
+
+| Dato | Propósito original o actual | Referencias verificadas | Retención recomendada antes de revisar eliminación |
+| --- | --- | --- | --- |
+| `cases.collection_owner_id` | Asignación histórica específica de cobranza. | El modelo la marca heredada; `repository.visibility()` todavía la usa para permitir que ciertos usuarios vean solicitudes. | Conservar. Retirar solo junto con una sustitución de permisos, auditoría de usuarios/casos afectados y pruebas de acceso por rol. |
+| `cases.pending_message` | Indicaba mensajes entrantes pendientes en el flujo de correo. | Migraciones 003 y 013 consultaron el indicador; el flujo actual ya no lo usa para bandejas ni cierre. El modelo aún lo serializa. | Conservar hasta medir valores existentes y verificar que la lectura histórica/API y respaldos no dependan de él. No inferir un estado nuevo desde eventos antiguos. |
+| `productions.legacy_stage`, `classification_required` | Preservan etapas anteriores y marcan órdenes que requieren clasificación explícita. | `ProductionStages.jsx`, `services.change_stage()` y la proyección de órdenes leen estos datos; revisión 003 copió la etapa histórica. | Conservar mientras existan órdenes sin clasificar o snapshots sin equivalencia inequívoca. Toda futura regularización debe ser explícita y auditada por OP. |
+| `productions.owner_id` | Asignación histórica a nivel de OP. El propietario vigente es el de la solicitud. | Comentario del modelo identifica el campo como heredado; la búsqueda del flujo actual no encontró una lectura de esa columna. | Mantener hasta medir valores, revisar exportaciones/respaldos y comprobar referencias externas; su aparente falta de lectura no autoriza borrarla. |
+| `productions.art_version`, `approval_evidence`, `approved_snapshot`, `authorized_at` | Campos del flujo anterior de aprobación de arte. | El modelo los conserva; las vistas y la impresión consultan `approved_snapshot` como alternativa histórica; `art_version` se mantiene en la OP y los adjuntos. | Conservar snapshots/evidencias usados por impresión o historial. Evaluar cada campo por separado; no retirar el grupo como bloque. |
+| `items.substage` | Etapa histórica a nivel de producto cuando la etapa era por línea. | Sigue en el modelo y esquema inicial; no se encontró lectura en el flujo actual. | Medir valores y comprobar reportes/exportaciones externos antes de proponer limpieza. |
+| `drafts.email_*` | Destinatario, asunto, adjuntos y hilo de borradores de correo. | El borrador de notas sigue activo; los campos de correo permanecen en el modelo, mientras la mensajería se retiró. | Retener el borrador de notas. Para columnas de correo, establecer si tienen valores y si son requeridas por copias externas antes de separarlas o retirarlas. |
+| `mail_accounts`, `mail_sync_cursors`, `mail_worker_tasks`, `mail_sync_outcomes`, `mail_messages`, `mail_attachments` | Configuración, sincronización y archivo histórico de correo. | `repository.case_detail()` lee mensajes/adjuntos en modo historial y `deletion.py` los incluye al eliminar definitivamente una solicitud; [RETIRADA_MENSAJERIA.md](RETIRADA_MENSAJERIA.md) confirma que se retiró el envío y la sincronización, no el archivo. | Conservar en modo de solo lectura y respaldar junto con la clave histórica cifrada. Definir retención y acceso a datos personales antes de cualquier purga. |
+| `provider_inbox` | Tabla prevista para entradas de proveedores. | Aparece en el modelo y en el esquema inicial; no se encontró un consumidor actual. | Mantener hasta verificar conteos, estados, origen de los registros y posibles exportaciones o integraciones fuera del repositorio. |
+| `cases.related_case_id` | Relación explícita entre solicitudes. | `CaseAttention.jsx` la muestra; `cases.py` valida visibilidad y `deletion.py` conserva la integridad al eliminar una solicitud. | Conservar como dato vigente. |
+| `events.data`, snapshots JSON, adjuntos y referencias de ledger | Auditoría de cambios, instantáneas de cotización/OP y referencias operativas/financieras. | La bitácora se muestra en el detalle; proyecciones e impresión leen snapshots; el ledger respalda saldos y reversos. | Conservar conforme a una política de retención aprobada. No eliminar claves JSON ni adjuntos por falta de una columna tipada. |
+
+## Criterios previos a una futura migración
+
+1. Definir de forma separada el conjunto de tablas o columnas y la razón de retención o retiro; no agrupar campos solo porque pertenecen a un flujo antiguo.
+2. Buscar consumidores en frontend, backend, API, migraciones, exportaciones, scripts operativos, respaldos y documentación. Revisar también JSON y referencias por ID.
+3. Medir filas, valores distintos, nulos, registros huérfanos y archivos asociados en una copia aislada. No ejecutar estas consultas exploratorias sobre el servidor operativo si pueden bloquearlo.
+4. Confirmar con el responsable del negocio y, cuando corresponda, asesoría de privacidad cuánto deben conservarse datos personales o comunicaciones.
+5. Acordar una exportación segura, checksum, respaldo restaurable y ventana de mantenimiento. Los logs no deben incluir cuerpos de correo, credenciales ni datos personales.
+6. Separar primero la retirada de lecturas/escrituras del borrado físico. Mantener compatibilidad de lectura mientras se valida el nuevo flujo; cualquier `DROP` requiere revisión y autorización específicas.
+7. Probar migración, rollback o restauración y conteos antes/después solo en una base dedicada. Documentar los registros que se excluyen y la evidencia de su recuperación.
+
+Hasta completar estos criterios, el estado de todos los datos descritos como heredados es **conservar y observar**; no se introdujo una migración en este cambio.

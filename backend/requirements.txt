@@ -8,5 +8,3 @@ python-multipart==0.0.22
 pydantic-settings==2.13.1
 cryptography==50.0.2
 tzdata==2025.3
-httpx==0.28.1
-pytest==9.0.2

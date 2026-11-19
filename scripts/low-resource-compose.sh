@@ -4,6 +4,27 @@ set -eu
 REPO=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 ENV_FILE=${LOW_RESOURCE_ENV_FILE:-"$REPO/.runtime/low-resource/.env"}
 cd "$REPO"
+if [ -z "${APP_BUILD_TARGET:-}" ]; then
+  TEST_MODE=$(awk -F= '$1 == "LOW_RESOURCE_TEST_MODE" {print $2; exit}' "$ENV_FILE" 2>/dev/null || true)
+  if [ "$TEST_MODE" = '1' ]; then
+    APP_BUILD_TARGET=test
+  else
+    APP_BUILD_TARGET=app
+  fi
+  export APP_BUILD_TARGET
+fi
+case "$APP_BUILD_TARGET" in
+  app|test) ;;
+  *) printf 'APP_BUILD_TARGET debe ser app o test.\n' >&2; exit 1 ;;
+esac
+if [ -z "${APP_IMAGE:-}" ]; then
+  if [ "$APP_BUILD_TARGET" = 'test' ]; then
+    APP_IMAGE=comgraf-app:lan-low-resource-test
+  else
+    APP_IMAGE=comgraf-app:lan-low-resource
+  fi
+  export APP_IMAGE
+fi
 OVERRIDE_FILE=${LOW_RESOURCE_OVERRIDE_FILE:-}
 if [ -z "$OVERRIDE_FILE" ] && [ -r "$ENV_FILE" ]; then
   OVERRIDE_FILE=$(awk -F= '$1 == "LOW_RESOURCE_OVERRIDE_FILE" {sub(/^[^=]*=/, ""); print; exit}' "$ENV_FILE")

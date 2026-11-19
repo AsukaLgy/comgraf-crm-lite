@@ -335,6 +335,7 @@ export function Operation({
                     label={f.label}
                     type={f.type || 'text'}
                     min={f.min}
+                    maxLength={f.maxLength}
                     step={f.step}
                     required={typeof f.required === 'function' ? f.required(v) : f.required}
                     value={f.type === 'checkbox' ? undefined : v[f.name]}

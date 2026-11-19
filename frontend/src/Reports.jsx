@@ -11,11 +11,58 @@ export function Calendar() {
     [month, setMonth] = useState(
       params.get('month') === 'all' ? '' : params.get('month') || localDate().slice(0, 7),
     ),
-    q = useQuery({ queryKey: ['calendar'], queryFn: () => api('/calendar') }),
+    q = useQuery({
+      queryKey: ['calendar', month],
+      queryFn: () => {
+        if (!month) return api('/calendar')
+        const [year, monthNumber] = month.split('-').map(Number)
+        const through = new Date(year, monthNumber, 0).getDate()
+        return api(`/calendar?from=${month}-01&through=${month}-${String(through).padStart(2, '0')}`)
+      },
+    }),
+    promised = useQuery({
+      queryKey: ['calendar-promised-orders', month],
+      enabled: Boolean(month),
+      queryFn: () => {
+        const [year, monthNumber] = month.split('-').map(Number)
+        const through = new Date(year, monthNumber, 0).getDate()
+        return api(
+          `/calendar/promised-orders?from=${month}-01&through=${month}-${String(through).padStart(2, '0')}`,
+        )
+      },
+    }),
     unscheduled = useQuery({
       queryKey: ['calendar-unscheduled-collections'],
       queryFn: () => api('/calendar/unscheduled-collections'),
     })
+  const orderCounts = Object.fromEntries((promised.data?.days || []).map((day) => [day.date, day.orders]))
+  const promisedDays = month
+    ? (() => {
+        const [year, monthNumber] = month.split('-').map(Number)
+        const numberOfDays = new Date(year, monthNumber, 0).getDate()
+        return Array.from({ length: numberOfDays }, (_, index) => {
+          const day = `${month}-${String(index + 1).padStart(2, '0')}`
+          return { date: day, orders: orderCounts[day] || 0 }
+        })
+      })()
+    : []
+  const totalPromised = promisedDays.reduce((total, day) => total + day.orders, 0)
+  const busiestDay = promisedDays.reduce((busiest, day) => (day.orders > busiest.orders ? day : busiest), {
+    date: '',
+    orders: 0,
+  })
+  const chartMax = Math.max(1, ...promisedDays.map((day) => day.orders))
+  const chartStep = Math.max(1, Math.ceil(chartMax / 4))
+  const chartAxisMax = Math.ceil(chartMax / chartStep) * chartStep
+  const chartTicks = Array.from({ length: chartAxisMax / chartStep + 1 }, (_, index) => index * chartStep)
+  const chartWidth = 780
+  const chartHeight = 230
+  const plotLeft = 42
+  const plotTop = 14
+  const plotWidth = 728
+  const plotHeight = 170
+  const slotWidth = promisedDays.length ? plotWidth / promisedDays.length : 0
+  const barWidth = Math.min(14, slotWidth * 0.62)
   const items = (q.data || []).filter(
     (e) =>
       (!type || e.type === type) &&
@@ -33,6 +80,81 @@ export function Calendar() {
           <p>Fechas de acción, producción, entrega y cobro por orden.</p>
         </div>
       </div>
+      <Panel
+        title="Órdenes prometidas por día"
+        action={month && <span className="calendar-chart-period">{new Date(`${month}-01T12:00:00`).toLocaleDateString('es-HN', { month: 'long', year: 'numeric' })}</span>}
+      >
+        {!month ? (
+          <p className="muted">Selecciona un mes para consultar las OP pendientes por fecha comprometida.</p>
+        ) : promised.isPending ? (
+          <Loading />
+        ) : promised.error ? (
+          <ErrorBox error={promised.error} />
+        ) : (
+          <>
+            <div className="calendar-kpi-summary">
+              <div>
+                <span>OP pendientes comprometidas en el mes</span>
+                <strong>{totalPromised}</strong>
+              </div>
+              <p>
+                Cuenta una vez cada OP no anulada ni entregada, según su fecha comprometida vigente.
+                {busiestDay.orders > 0 && (
+                  <> Mayor carga: {date(busiestDay.date)} ({busiestDay.orders} OP).</>
+                )}
+              </p>
+            </div>
+            <div
+              className="calendar-promised-chart"
+              role="img"
+              aria-label={`OP pendientes prometidas por fecha durante ${month}: ${promisedDays.map((day) => `día ${day.date.slice(-2)}, ${day.orders} OP`).join('; ')}`}
+            >
+              <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} aria-hidden="true" focusable="false">
+                {chartTicks.map((tick) => {
+                  const y = plotTop + plotHeight - (tick / chartAxisMax) * plotHeight
+                  return (
+                    <g key={tick}>
+                      <line className="calendar-chart-grid" x1={plotLeft} x2={plotLeft + plotWidth} y1={y} y2={y} />
+                      <text className="calendar-chart-y-label" x={plotLeft - 10} y={y + 4} textAnchor="end">
+                        {tick * chartStep}
+                      </text>
+                    </g>
+                  )
+                })}
+                {promisedDays.map((day, index) => {
+                  const height = day.orders ? (day.orders / chartAxisMax) * plotHeight : 0
+                  const x = plotLeft + index * slotWidth + (slotWidth - barWidth) / 2
+                  const showLabel = index === 0 || (index + 1) % 5 === 0 || index === promisedDays.length - 1
+                  return (
+                    <g key={day.date}>
+                      {day.orders > 0 && (
+                        <rect
+                          className="calendar-promised-bar"
+                          x={x}
+                          y={plotTop + plotHeight - height}
+                          width={barWidth}
+                          height={height}
+                          rx="4"
+                        />
+                      )}
+                      {showLabel && (
+                        <text
+                          className={`calendar-chart-x-label${index === 0 ? ' landmark' : ''}`}
+                          x={plotLeft + index * slotWidth + slotWidth / 2}
+                          y={plotTop + plotHeight + 22}
+                          textAnchor="middle"
+                        >
+                          {Number(day.date.slice(-2))}
+                        </text>
+                      )}
+                    </g>
+                  )
+                })}
+              </svg>
+            </div>
+          </>
+        )}
+      </Panel>
       <Panel title="Agenda del equipo">
         <div className="filters">
           <Field

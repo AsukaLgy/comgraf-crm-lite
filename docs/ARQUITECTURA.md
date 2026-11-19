@@ -4,7 +4,7 @@
 
 React 19 + JavaScript + Vite. FastAPI sirve los archivos compilados y `/api` desde el mismo origen. SQLAlchemy usa PyMySQL y exclusivamente MySQL/InnoDB. Alembic mantiene migraciones incrementales; revisiones 003/004 actualizan el flujo de producción y recuperan seguimientos vencidos heredados. Node solo compila la interfaz.
 
-`backend/app/routers` contiene transporte HTTP; `schemas.py`, validación de entrada; `services.py`, transacciones y reglas; `repository.py`, consultas y representación según permisos; `models.py`, relaciones persistentes. Calendario, cobros y comunicaciones no son servicios independientes.
+`backend/app/routers` contiene transporte HTTP; `schemas.py`, validación de entrada; `services.py`, coordinación de operaciones; `service_events.py`, escritura común de actividad y cierre de ciclo de vida; `repository.py`, consultas y representación según permisos; `repository_finance.py`, saldo y predicados financieros; `models.py`, relaciones persistentes. Calendario, cobros y comunicaciones no son servicios independientes.
 
 ## Expediente único
 
@@ -34,6 +34,10 @@ Se usa aislamiento READ COMMITTED para que la segunda transacción vea el result
 ## Bitácora de actividad
 
 La pestaña combina notas manuales con eventos de cambios del expediente. Las operaciones de atención, asignación, cotización, producción, programación, entrega, cobro, devolución, ajuste y seguimiento escriben su evento dentro de la misma transacción que el cambio. Los cobros guardan tipo, importe, referencia y OP; los anticipos de creación también generan un evento. Las altas, reprogramaciones y cierres de seguimiento conservan su ID y enlazan la OP cuando aplica. El indicador `financial` evita mostrar importes, referencias y resoluciones económicas a roles sin permiso comercial; los cambios operativos de una anulación siguen visibles sin incluir esos datos. Guardar borradores, reintentar una operación idempotente o enviar una actualización sin cambios no crea eventos duplicados.
+
+La interfaz pide el número de factura al registrar un abono o cobrar durante la entrega; el mismo número queda como referencia del movimiento y en el evento financiero de la bitácora. Asociar una factura a una entrega sin cobro sigue siendo opcional. La API conserva compatibilidad con integraciones antiguas que solo envían una referencia. El número no asigna folios fiscales, valida CAI ni crea un registro contable independiente. Los roles sin permiso comercial no reciben ese evento.
+
+El saldo vencido se calcula por OP. Los abonos y otros créditos reducen el vencido de la misma OP, sin compensar saldos entre órdenes distintas de una solicitud; los filtros, el resumen financiero y la lista de OP vencidas siguen esa misma regla. El saldo neto total de una solicitud en una sola moneda continúa sumando sus movimientos.
 
 ## Alta y asignación
 

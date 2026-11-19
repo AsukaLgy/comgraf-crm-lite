@@ -284,7 +284,7 @@ test('error real de validación conserva formulario y conversión mantiene exped
   await page.screenshot({ path: '../.runtime/comgraf-ficha.png', fullPage: true })
 })
 
-test('una solicitud admite varias partidas por orden y varias órdenes independientes', async ({
+test('cada producto de una solicitud genera una OP independiente', async ({
   page,
 }) => {
   const record = await createCase(page, 'E2E Varias órdenes en un expediente')
@@ -305,16 +305,33 @@ test('una solicitud admite varias partidas por orden y varias órdenes independi
     .getByLabel('Especificaciones adicionales')
     .fill('Paquete de tarjetas complementario')
   await dialog.getByRole('button', { name: /Generar orden de producción/ }).click()
-  await dialog.getByRole('button', { name: 'Mantener en Aprobación' }).click()
+  await dialog.getByRole('button', { name: 'Ver órdenes', exact: true }).click()
   await expect(page).toHaveURL(
     new RegExp('/cases/' + record.id + '\\?(?=.*production_id=\\d+)(?=.*tab=production)'),
   )
   await page.getByRole('button', { name: 'Producción', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Especificaciones de producción' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Banners y lonas', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Otros trabajos', exact: true })).toBeVisible()
   await expect(page.getByRole('img', { name: /QR estable de la orden/ }).first()).toBeVisible()
-  const firstOrderUrl = page.url()
+  const generated = await (await page.request.get(`/api/cases/${record.id}`)).json()
+  expect(generated.production_count).toBe(2)
+  expect(generated.productions.map((order) => order.product_names)).toEqual([
+    ['Banners y lonas'],
+    ['Otros trabajos'],
+  ])
+  const orderDetails = await Promise.all(
+    generated.productions.map(async (order) =>
+      (await page.request.get(`/api/cases/${record.id}?production_id=${order.id}`)).json(),
+    ),
+  )
+  expect(orderDetails.map((details) => details.items.length)).toEqual([1, 1])
+  expect(orderDetails.map((details) => details.items[0].specs.detail || '')).toEqual([
+    '',
+    'Paquete de tarjetas complementario',
+  ])
+  const firstOrderUrl = `/cases/${record.id}?tab=production&production_id=${generated.productions[0].id}`
+  await page.locator('.case-order-entry').first().getByRole('button', { name: 'Ver orden' }).click()
+  await expect(page.getByRole('heading', { name: 'Banners y lonas', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Agregar orden de producción', exact: true }).click()
   dialog = page.getByRole('dialog')
   items = dialog.locator('.item-editor')
@@ -330,7 +347,7 @@ test('una solicitud admite varias partidas por orden y varias órdenes independi
   await dialog.getByRole('button', { name: 'Pasar a Impresión', exact: true }).click()
   await expect(
     page.getByRole('combobox', { name: 'Orden de producción seleccionada' }).locator('option'),
-  ).toHaveCount(2)
+  ).toHaveCount(3)
   await expect(
     page.getByRole('heading', { name: 'Talonarios y facturas', exact: true }),
   ).toBeVisible()
@@ -340,9 +357,13 @@ test('una solicitud admite varias partidas por orden y varias órdenes independi
   await expect(page.getByText('Etapa actual: Aprobación')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Banners y lonas', exact: true })).toBeVisible()
   const persisted = await (await page.request.get(`/api/cases/${record.id}`)).json()
-  expect(persisted.production_count).toBe(2)
-  expect(persisted.productions.map((order) => order.stage).sort()).toEqual(['APPROVAL', 'PRINTING'])
-  expect(persisted.productions.map((order) => order.order_number).filter(Boolean)).toHaveLength(2)
+  expect(persisted.production_count).toBe(3)
+  expect(persisted.productions.map((order) => order.stage).sort()).toEqual([
+    'APPROVAL',
+    'APPROVAL',
+    'PRINTING',
+  ])
+  expect(persisted.productions.map((order) => order.order_number).filter(Boolean)).toHaveLength(3)
   const productCounts = await Promise.all(
     persisted.productions.map(async (order) => {
       const details = await (
@@ -351,7 +372,7 @@ test('una solicitud admite varias partidas por orden y varias órdenes independi
       return details.items.length
     }),
   )
-  expect(productCounts.sort()).toEqual([1, 2])
+  expect(productCounts.sort()).toEqual([1, 1, 1])
 })
 
 test('filtros y vistas conservados al volver desde el expediente', async ({ page }) => {

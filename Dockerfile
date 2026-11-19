@@ -5,7 +5,7 @@ RUN npm ci --ignore-scripts
 COPY frontend/ ./
 RUN npm run build
 
-FROM python:3.14-slim-bookworm@sha256:48b13b003dda20b16f9442b8475aa05fe21bf6579a8c881db92ffb4d8fd20f83
+FROM python:3.14-slim-bookworm@sha256:48b13b003dda20b16f9442b8475aa05fe21bf6579a8c881db92ffb4d8fd20f83 AS runtime
 ARG BUILD_COMMIT=unknown
 ARG BUILD_DATE=unknown
 ENV COMGRAF_BUILD_COMMIT=${BUILD_COMMIT} COMGRAF_BUILD_DATE=${BUILD_DATE} PRODUCT_VERSION=1.6.0
@@ -20,3 +20,13 @@ COPY --from=ui --chown=comgraf:comgraf /ui/dist /app/frontend/dist
 USER comgraf
 EXPOSE 8000
 CMD ["python", "-m", "app.start"]
+
+# Test tooling is available only in the dedicated disposable test image.
+FROM runtime AS test
+USER root
+COPY backend/requirements-dev.lock.txt /tmp/requirements-dev.lock.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-dev.lock.txt
+USER comgraf
+
+# Keep the default build and production target free of pytest/httpx/ruff.
+FROM runtime AS app

@@ -4,16 +4,18 @@ import os
 from pathlib import Path
 import secrets
 
+from app.test_database import configure_test_database, verify_test_database_identity
+
+TEST_DATABASE = configure_test_database()
 from app.config import settings
-from app.db import SessionLocal
+from app.db import SessionLocal, engine
 from app.models import Case, Client, User
 from app.repository import client_search_text
 from app.security import passwords
 
 
 def main():
-    if not settings.mysql_database.endswith('_test'):
-        raise SystemExit('Refusing to seed: MYSQL_DATABASE must end in _test.')
+    verify_test_database_identity(engine, TEST_DATABASE)
     token = secrets.token_hex(4)
     credentials = {'environment': 'test-only', 'users': []}
     target = Path(os.getenv(

@@ -1,8 +1,8 @@
-from datetime import datetime, time, timedelta, timezone
+from datetime import date as date_type, datetime, time, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
-from fastapi import APIRouter, Depends
-from sqlalchemy import select, func
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select, func, and_, not_, or_
 from ..db import get_db
 from ..models import Case, Client, Item, Production, Task, Delivery, now
 from ..security import current_user, require, can
@@ -13,13 +13,35 @@ from ..config import settings
 router = APIRouter(prefix='/api', tags=['Calendario e indicadores'])
 
 
+def _calendar_window(start, end):
+    if start is None and end is None:
+        return None
+    if start is None or end is None or end < start:
+        raise HTTPException(422, 'Indica un período válido con fecha inicial y final')
+    if (end - start).days > 366 or end == date_type.max:
+        raise HTTPException(422, 'El período del calendario no puede superar 367 días')
+    zone = ZoneInfo(settings.app_timezone)
+    utc_start = datetime.combine(start, time.min, zone).astimezone(timezone.utc).replace(tzinfo=None)
+    utc_end = datetime.combine(end + timedelta(days=1), time.min, zone).astimezone(timezone.utc).replace(tzinfo=None)
+    return start, end, utc_start, utc_end
+
+
 @router.get('/calendar')
-def calendar(user=Depends(current_user), db=Depends(get_db, scope='function')):
+def calendar(
+    start: date_type | None = Query(None, alias='from'),
+    end: date_type | None = Query(None, alias='through'),
+    user=Depends(current_user), db=Depends(get_db, scope='function'),
+):
+    window = _calendar_window(start, end)
     events = []
-    for case in db.scalars(select(Case).where(visibility(db, user))):
-        client = db.get(Client, case.client_id)
+    for case, client in db.execute(
+        select(Case, Client).outerjoin(Client, Client.id == Case.client_id).where(visibility(db, user))
+    ):
         label = f'CG-{case.id:06d} · {client.name if client else case.subject}'
-        for task in db.scalars(select(Task).where(Task.case_id == case.id, Task.done_at.is_(None))):
+        task_query = select(Task).where(Task.case_id == case.id, Task.done_at.is_(None))
+        if window:
+            task_query = task_query.where(Task.due_at >= window[2], Task.due_at < window[3])
+        for task in db.scalars(task_query):
             order = db.get(Production, task.production_id) if task.production_id else None
             collection = task.purpose == 'COLLECTION'
             if collection and not (can(db, user, 'finance') or can(db, user, 'attention')):
@@ -32,7 +54,14 @@ def calendar(user=Depends(current_user), db=Depends(get_db, scope='function')):
                 'action': task.title, 'date_label': 'Cobro programado el' if collection else 'Contactar el',
                 'stage': STAGE_LABELS.get(order.stage) if order and order.stage else None,
                 'state_label': 'Pendiente', 'owner_id': task.owner_id})
-        for production in db.scalars(select(Production).where(Production.case_id == case.id).order_by(Production.id)):
+        production_query = select(Production).where(Production.case_id == case.id).order_by(Production.id)
+        if window:
+            production_query = production_query.where(or_(
+                and_(Production.scheduled_at >= window[2], Production.scheduled_at < window[3]),
+                Production.committed_date.between(window[0], window[1]),
+                Production.payment_due_date.between(window[0], window[1]),
+            ))
+        for production in db.scalars(production_query):
             status = delivery_status(db, case.id, production.id)
             if production.cancelled_at: continue
             order_number = f'OP-{production.id:05d}'
@@ -50,14 +79,42 @@ def calendar(user=Depends(current_user), db=Depends(get_db, scope='function')):
                 'title': order_context, 'order_number': order_number, 'stage': stage, 'stage_label': stage,
                 'state_label': 'Bloqueada · ' + production.block_reason if production.blocked_since else stage,
                 'original': str(production.original_committed_date) if production.original_committed_date else None})
-            order_balance = balance(db, case.id, production.id)['balance']
-            if (can(db, user, 'finance') or can(db, user, 'attention')) and order_balance is not None and Decimal(order_balance) > 0 and production.payment_due_date:
-                events.append({'id': f'm{production.id}', 'case_id': case.id, 'production_id': production.id,
-                    'type': 'Vencimiento de pago', 'event_kind': 'payment_due', 'date': str(production.payment_due_date),
-                    'date_label': 'Pago vence el', 'action': 'Revisar saldo pendiente', 'title': order_context,
-                    'order_number': order_number, 'stage': stage,
-                    'state_label': 'Entregada · saldo pendiente' if status == 'Completa' else 'Saldo pendiente'})
+            if production.payment_due_date and (can(db, user, 'finance') or can(db, user, 'attention')):
+                order_balance = balance(db, case.id, production.id)['balance']
+                if order_balance is not None and Decimal(order_balance) > 0:
+                    events.append({'id': f'm{production.id}', 'case_id': case.id, 'production_id': production.id,
+                        'type': 'Vencimiento de pago', 'event_kind': 'payment_due', 'date': str(production.payment_due_date),
+                        'date_label': 'Pago vence el', 'action': 'Revisar saldo pendiente', 'title': order_context,
+                        'order_number': order_number, 'stage': stage,
+                        'state_label': 'Entregada · saldo pendiente' if status == 'Completa' else 'Saldo pendiente'})
     return sorted(events, key=lambda e: e['date'])
+
+
+@router.get('/calendar/promised-orders')
+def promised_orders(
+    start: date_type = Query(..., alias='from'),
+    end: date_type = Query(..., alias='through'),
+    user=Depends(current_user), db=Depends(get_db, scope='function'),
+):
+    window = _calendar_window(start, end)
+    _has_item, _remaining_item, complete = order_item_predicates()
+    rows = db.execute(
+        select(Production.committed_date, func.count(Production.id))
+        .join(Case, Case.id == Production.case_id)
+        .where(
+            visibility(db, user),
+            Production.cancelled_at.is_(None),
+            Production.committed_date.between(window[0], window[1]),
+            not_(complete),
+        )
+        .group_by(Production.committed_date)
+        .order_by(Production.committed_date)
+    ).all()
+    return {
+        'from': str(start),
+        'through': str(end),
+        'days': [{'date': str(day), 'orders': count} for day, count in rows],
+    }
 
 
 @router.get('/calendar/unscheduled-collections')

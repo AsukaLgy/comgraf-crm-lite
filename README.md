@@ -19,14 +19,15 @@ CRM de la imprenta para solicitudes, clientes, cotizaciones, órdenes de producc
 
 La versión de producto está en `frontend/package.json`, `frontend/src/api.js` y `backend/app/version.py`. El contrato HTTP es independiente. El Dockerfile recibe `BUILD_COMMIT` y `BUILD_DATE` durante la construcción; `/api/version` expone ambos, además de la versión y el contrato. No uses el campo legado `build` para identificar el código en ejecución.
 
+El archivo [DATOS_HEREDADOS](docs/DATOS_HEREDADOS.md) inventaría campos y tablas históricos, su uso actual y las verificaciones necesarias antes de proponer retención o migraciones.
+
 ## Desarrollo rápido
 
 Usa Python 3.14, Node 24 y una base MySQL 8.4 separada de cualquier instalación real. No hay credenciales predeterminadas. Copia `.env.example` a `.env` únicamente para desarrollo y completa sus valores sin incorporarlos a Git.
 
 ```sh
 python3.14 -m venv .venv
-.venv/bin/python -m pip install -r backend/requirements.lock.txt
-.venv/bin/python -m pip install -r backend/requirements-dev.txt
+.venv/bin/python -m pip install -r backend/requirements-dev.lock.txt
 npm --prefix frontend ci --ignore-scripts
 cd backend
 ../.venv/bin/python -m alembic upgrade head
@@ -35,7 +36,9 @@ APP_HOST=127.0.0.1 APP_WORKERS=1 ../.venv/bin/python -m app.start
 
 En otra terminal, desde la raíz, `npm --prefix frontend run dev`. Vite reenvía `/api` a la API local. Para crear la primera cuenta en una base vacía, detén la API y ejecuta desde `backend/`: `../.venv/bin/python -m app.cli create-admin`. El comando pide la contraseña sin mostrarla.
 
-Para pruebas, establece `TEST_MYSQL_DATABASE` con una base terminada en `_test`:
+Para pruebas locales, configura `TEST_MYSQL_DATABASE` con un esquema MySQL dedicado
+terminado en `_test`, distinto de `MYSQL_DATABASE`. El fixture confirma la identidad
+real de MySQL antes de migrar o limpiar datos; no usa un destino predeterminado:
 
 ```sh
 cd backend

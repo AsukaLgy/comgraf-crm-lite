@@ -10,6 +10,7 @@ from .models import Case, Client, Contact, Delivery, Event, Idempotency, Item, L
 from .security import can, require, require_binding_scanner
 from .repository import get_case, today, row, delivery_status, local_day, quantity_text, balance, attention_predicates, case_completion_blockers
 from . import schemas as s
+from .service_events import event, finalize_case
 from .cai import CAI_BINDINGS, FISCAL_DOCUMENT_TYPES, cai_summary, is_cai_product, uses_print_form, new_order_product
 
 NEXT_STAGE = s.NEXT_STAGE
@@ -19,34 +20,6 @@ CURRENCY_HNL = 'HNL'
 
 def fail(message, code=422):
     raise HTTPException(code, message)
-
-
-def event(db, case, user, body, kind='Sistema', channel='Sistema', data=None):
-    db.add(Event(case_id=case.id, actor_id=user.id if user else None, body=body, kind=kind, channel=channel, data=data or {}))
-    case.updated_at = now()
-
-
-def finalize_case(db, case, actor_id, *, origin, action_trigger, regularization_run=None):
-    """Persist one lifecycle transition and its audit event for every completion path."""
-    if case.lifecycle != 'Activo':
-        return False
-    completed_at = now()
-    old_status = case.status
-    case.lifecycle = 'Completado'
-    case.completed_at = completed_at
-    case.completed_by_id = actor_id
-    case.status = 'Cerrado'
-    case.closed_at = completed_at
-    body = 'Solicitud regularizada durante la actualización' if origin == 'historical_regularization' else 'Solicitud completada'
-    db.add(Event(case_id=case.id, actor_id=actor_id, kind='Sistema', channel='Sistema',
-        body=body, data={
-            'action': 'case_completed', 'lifecycle_from': 'Activo', 'lifecycle_to': 'Completado',
-            'attention_from': old_status, 'attention_to': 'Cerrado', 'origin': origin,
-            'action_trigger': action_trigger,
-            'regularization_run': regularization_run,
-            'completed_at': completed_at.isoformat() + 'Z', 'actor_id': actor_id}))
-    case.updated_at = completed_at
-    return True
 
 
 def complete_resolved_production(db, case, user, action_trigger):
@@ -1105,10 +1078,12 @@ def deliver_complete(db, user, case_id, data):
     case, changed = mutation(db, user, case_id, data, 'delivery_complete', 'production')
     if not changed: return case
     production = get_production(db, case, data.production_id)
+    invoice_number = (data.invoice_number or '').strip() or None
+    payment_reference = invoice_number or (data.payment_reference or '').strip() or None
     if data.payment_amount is not None:
         require(db, user, 'finance')
-        if not data.payment_reference:
-            fail('Indica la referencia del cobro')
+        if not payment_reference:
+            fail('Indica el número de factura del cobro')
         if production.currency != CURRENCY_HNL:
             fail('Esta orden histórica no admite pagos nuevos en HNL', 409)
     elif data.payment_reference:
@@ -1145,7 +1120,7 @@ def deliver_complete(db, user, case_id, data):
                             receiver=data.receiver, method=data.method, evidence=data.evidence or f'Entrega completa OP-{production.id:05d}', actor_id=user.id))
     if data.payment_amount is not None:
         db.add(Ledger(case_id=case.id, production_id=production.id, kind='Abono', amount=-data.payment_amount,
-                      currency=production.currency, reference=data.payment_reference, actor_id=user.id))
+                      currency=production.currency, reference=payment_reference, actor_id=user.id))
         db.flush()
         resolve_paid_collection_followups(db, case, production, user)
     event(db, case, user, f'Entrega completa de OP-{production.id:05d} · {data.method}',
@@ -1155,13 +1130,19 @@ def deliver_complete(db, user, case_id, data):
     if data.payment_amount is not None or remaining_balance > 0:
         event(db, case, user,
               f'Situación de cobro OP-{production.id:05d}: '
-              + (f'Abono {data.payment_amount:.2f} {production.currency}. {data.payment_reference}. ' if data.payment_amount is not None else '')
-              + (f'Saldo {remaining_balance:.2f} {production.currency}. {balance_reason}' if remaining_balance > 0 else 'Pagado.'),
+              + (f'Abono {data.payment_amount:.2f} {production.currency}. ' if data.payment_amount is not None else '')
+              + (f'Saldo {remaining_balance:.2f} {production.currency}. {balance_reason}' if remaining_balance > 0 else 'Pagado.')
+              + (f' Factura: {invoice_number}.' if invoice_number else f' Referencia: {payment_reference}.' if data.payment_amount is not None else ''),
               data={'financial': True, 'action': 'delivery_collection', 'production_id': production.id,
                     'payment_kind': 'Abono' if data.payment_amount is not None else None,
                     'payment_amount': f'{data.payment_amount:.2f}' if data.payment_amount is not None else None,
-                    'payment_reference': data.payment_reference,
+                    'payment_reference': payment_reference,
+                    'invoice_number': invoice_number,
                     'balance_reason': balance_reason if remaining_balance > 0 else None})
+    elif invoice_number:
+        event(db, case, user, f'Factura {invoice_number} asociada a la entrega completa de OP-{production.id:05d}',
+              data={'financial': True, 'action': 'invoice_registered', 'production_id': production.id,
+                    'invoice_number': invoice_number, 'source': 'delivery'})
     resolve_delivered_pickup_followups(db, case, production, user)
     complete_resolved_production(db, case, user, 'delivery_collection' if data.payment_amount is not None else 'delivery_completed')
     return case
@@ -1172,12 +1153,18 @@ def pay(db, user, case_id, data):
     if not changed: return case
     production = get_production(db, case, data.production_id)
     if production.currency != CURRENCY_HNL: fail('Esta orden histórica está en USD. No registres el abono como lempiras; requiere revisión explícita de moneda.', 409)
-    db.add(Ledger(case_id=case.id, production_id=production.id, kind=data.kind, amount=-data.amount, currency=production.currency, reference=data.reference, actor_id=user.id))
+    invoice_number = (data.invoice_number or '').strip() or None
+    reference = invoice_number or (data.reference or '').strip() or None
+    if not reference:
+        fail('Indica el número de factura del cobro')
+    db.add(Ledger(case_id=case.id, production_id=production.id, kind=data.kind, amount=-data.amount, currency=production.currency, reference=reference, actor_id=user.id))
     db.flush()
     resolve_paid_collection_followups(db, case, production, user)
-    event(db, case, user, f'{data.kind} OP-{production.id:05d}: {data.amount:.2f} {production.currency}. {data.reference}',
+    event(db, case, user, f'{data.kind} OP-{production.id:05d}: {data.amount:.2f} {production.currency}.'
+          + (f' Factura: {invoice_number}.' if invoice_number else f' Referencia: {reference}.'),
           data={'financial': True, 'action': 'payment', 'production_id': production.id,
-                'kind': data.kind, 'amount': f'{data.amount:.2f}', 'reference': data.reference})
+                'kind': data.kind, 'amount': f'{data.amount:.2f}', 'reference': reference,
+                'invoice_number': invoice_number})
     complete_resolved_production(db, case, user, 'payment')
     return case
 

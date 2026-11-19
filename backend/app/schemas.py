@@ -374,13 +374,15 @@ class CompleteDeliveryInput(Mutation):
     evidence: str = Field(default='', max_length=3000)
     payment_amount: Annotated[Decimal, Field(gt=0, max_digits=14, decimal_places=2)] | None = None
     payment_reference: str | None = Field(default=None, min_length=1, max_length=240)
+    invoice_number: str | None = Field(default=None, max_length=120)
     balance_reason: str | None = Field(default=None, min_length=3, max_length=300)
 
 
 class PaymentInput(Mutation):
     amount: Annotated[Decimal, Field(gt=0, max_digits=14, decimal_places=2)]
     kind: Literal['Anticipo', 'Abono'] = 'Abono'
-    reference: str = Field(min_length=1, max_length=240)
+    reference: str | None = Field(default=None, min_length=1, max_length=240)
+    invoice_number: str | None = Field(default=None, max_length=120)
 
 
 class AdjustmentInput(Mutation):

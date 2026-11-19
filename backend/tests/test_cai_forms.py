@@ -240,13 +240,16 @@ def test_failed_response_projection_rolls_back_production_request(clients, monke
         assert db.scalar(select(CreationRequest.id).where(CreationRequest.key == request_key)) is None
 
 
-def test_cai_binding_is_saved_per_product_line(clients):
+def test_cai_binding_is_saved_on_its_own_production_order(clients):
     api=clients['admin']; _,case=create(api,'Dos acabados CAI')
     items=[cai_item(specs={**cai_item()['specs'],'cai_binding':'Engrapado'}),
            cai_item(quantity='2',specs={**cai_item()['specs'],'cai_binding':'Hojas sueltas'})]
     result=mutate(api,case,'convert',{**conversion(),'items':items})
-    saved=result['production']['specs_snapshot']['items']
-    assert [row['specs']['cai_binding'] for row in saved]==['Engrapado','Hojas sueltas']
+    orders=result['productions']
+    assert len(orders)==2
+    snapshots=[order['specs_snapshot']['items'] for order in orders]
+    assert all(len(items)==1 for items in snapshots)
+    assert [items[0]['specs']['cai_binding'] for items in snapshots]==['Engrapado','Hojas sueltas']
 
 
 def test_all_fiscal_document_types_persist_per_line_and_survive_quote_conversion(clients):
@@ -259,10 +262,15 @@ def test_all_fiscal_document_types_persist_per_line_and_survive_quote_conversion
     assert [item['specs']['fiscal_document_type'] for item in quote['quotes'][-1]['items']] == list(FISCAL_DOCUMENT_TYPES)
     accepted = mutate(api, quote, f'quotes/{quote_id}/decision', {'status': 'Aceptada', 'evidence': 'Aprobada'})
     converted = mutate(api, accepted, 'convert', {**conversion(), 'quote_id': quote_id, 'items': []})
-    saved = converted['production']['specs_snapshot']['items']
-    assert [item['specs']['fiscal_document_type'] for item in saved] == list(FISCAL_DOCUMENT_TYPES)
-    reopened = must(api.get(f"/api/cases/{case['id']}?production_id={converted['production']['id']}"))
-    assert [item['specs']['fiscal_document_type'] for item in reopened['items']] == list(FISCAL_DOCUMENT_TYPES)
+    orders = converted['productions']
+    assert len(orders) == len(FISCAL_DOCUMENT_TYPES)
+    snapshots = [order['specs_snapshot']['items'] for order in orders]
+    assert all(len(items) == 1 for items in snapshots)
+    assert [items[0]['specs']['fiscal_document_type'] for items in snapshots] == list(FISCAL_DOCUMENT_TYPES)
+    for order, fiscal_type in zip(orders, FISCAL_DOCUMENT_TYPES):
+        reopened = must(api.get(f"/api/cases/{case['id']}?production_id={order['id']}"))
+        assert len(reopened['items']) == 1
+        assert reopened['items'][0]['specs']['fiscal_document_type'] == fiscal_type
     with SessionLocal() as db:
         assert [item['specs']['fiscal_document_type'] for item in db.get(Quote, quote_id).items] == list(FISCAL_DOCUMENT_TYPES)
 

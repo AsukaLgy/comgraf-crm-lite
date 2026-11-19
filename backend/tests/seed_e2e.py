@@ -1,16 +1,18 @@
 """Explicit fictional browser-test data. Never targets a real installation."""
-import os
 import json
 import secrets
 from pathlib import Path
-os.environ['MYSQL_DATABASE'] = os.environ.get('TEST_MYSQL_DATABASE', 'comgraf_test')
+from app.test_database import configure_test_database, verify_test_database_identity
+
+TEST_DATABASE = configure_test_database()
 from app.config import settings
+from app.db import engine
+verify_test_database_identity(engine, TEST_DATABASE)
 from app.db import SessionLocal
 from app.models import User, Client, Case
 from app.repository import normalize
 from app.security import passwords
 
-if not settings.mysql_database.endswith('_test'): raise SystemExit('Solo base _test')
 token = secrets.token_hex(4)
 password = secrets.token_urlsafe(24)
 scanner_password = secrets.token_urlsafe(24)
@@ -28,4 +30,4 @@ with SessionLocal.begin() as db:
     credentials = {'username':user.username,'password':password,'user_id':user.id,
         'scanner_username':scanner.username,'scanner_password':scanner_password,'scanner_user_id':scanner.id}
 Path('../.runtime/e2e.json').write_text(json.dumps(credentials), encoding='utf-8')
-print('Identidad temporal E2E creada en comgraf_test. Instalación real intacta.')
+print(f'Identidad temporal E2E creada en {TEST_DATABASE}. La base operativa no se modificó.')

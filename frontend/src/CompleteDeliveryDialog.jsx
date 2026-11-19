@@ -26,8 +26,8 @@ export default function CompleteDeliveryDialog({
     if (paying && (!Number.isFinite(amount) || amount <= 0 || amount > pending)) {
       throw new Error('El cobro debe ser positivo y no superar el saldo de la OP.')
     }
-    if (paying && !values.payment_reference.trim())
-      throw new Error('Indica la referencia del cobro.')
+    if (paying && !values.invoice_number.trim())
+      throw new Error('Indica el número de factura del cobro.')
     const remaining = pending - amount
     const credit =
       selected?.payment_terms === 'Crédito' &&
@@ -41,10 +41,12 @@ export default function CompleteDeliveryDialog({
       method: values.method,
       receiver: values.receiver || '',
       evidence: values.evidence || '',
+      ...(values.invoice_number.trim()
+        ? { invoice_number: values.invoice_number.trim() }
+        : {}),
       ...(paying
         ? {
             payment_amount: values.payment_amount,
-            payment_reference: values.payment_reference.trim(),
           }
         : {}),
       ...(!credit && values.balance_reason.trim()
@@ -78,9 +80,9 @@ export default function CompleteDeliveryDialog({
         method: DEFAULT_DELIVERY_METHOD,
         receiver: '',
         evidence: '',
+        invoice_number: '',
         collection: canCollect && first.payment_terms !== 'Crédito' ? 'now' : 'later',
         payment_amount: first.balance || '',
-        payment_reference: '',
         balance_reason: '',
       }}
       submit={(values) => {
@@ -151,6 +153,13 @@ export default function CompleteDeliveryDialog({
                   onChange={(event) => set('evidence', event.target.value)}
                 />
               </Field>
+              <Field
+                label={collecting ? 'Número de factura' : 'Número de factura (opcional)'}
+                required={collecting}
+                value={values.invoice_number}
+                maxLength={120}
+                onChange={(event) => set('invoice_number', event.target.value)}
+              />
             </div>
             {financial ? (
               <section className="integrated-create-section">
@@ -212,12 +221,6 @@ export default function CompleteDeliveryDialog({
                           required
                           value={values.payment_amount}
                           onChange={(event) => set('payment_amount', event.target.value)}
-                        />
-                        <Field
-                          label="Referencia / comprobante"
-                          required
-                          value={values.payment_reference}
-                          onChange={(event) => set('payment_reference', event.target.value)}
                         />
                       </div>
                     )}

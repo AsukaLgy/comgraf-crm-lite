@@ -10,6 +10,7 @@ from .models import Attachment, Case, Client, Delivery, Draft, Event, Item, Ledg
 from .security import cached_permissions, can
 from .config import settings
 from .schemas import STAGE_LABELS
+from .repository_finance import balance, financial_expressions, financial_status_predicates, today
 
 
 # ---- Normalización, fechas y serialización HTTP ----
@@ -22,10 +23,6 @@ def client_search_text(client, contacts=()):
     for contact in contacts:
         values.extend((contact.name, contact.phone, contact.email))
     return normalize(' '.join(str(value) for value in values if value))
-
-
-def today():
-    return datetime.now(ZoneInfo(settings.app_timezone)).date()
 
 
 def local_day(value):
@@ -78,28 +75,6 @@ def get_case(db, user, case_id, lock=False):
     if not case:
         raise HTTPException(404, 'Solicitud no disponible')
     return case
-
-
-def balance(db, case_id, production_id=None):
-    query = select(Ledger).where(Ledger.case_id == case_id)
-    if production_id is not None: query = query.where(Ledger.production_id == production_id)
-    entries = list(db.scalars(query.order_by(Ledger.id)))
-    if production_id is None:
-        currencies = set(db.scalars(select(Production.currency).where(Production.case_id == case_id)))
-        if not currencies: currencies = {entry.currency for entry in entries}
-        if len(currencies) > 1:
-            return {'balance': None, 'overdue_balance': None, 'payment_status': 'Saldo por orden',
-                'financial_by_currency': {currency: str(sum((e.amount for e in entries if e.currency == currency), Decimal('0'))) for currency in sorted(currencies)}}
-    elif entries and len({entry.currency for entry in entries}) > 1:
-        return {'balance': None, 'overdue_balance': None, 'payment_status': 'Revisión de moneda',
-            'financial_by_currency': {currency: str(sum((e.amount for e in entries if e.currency == currency), Decimal('0'))) for currency in sorted({entry.currency for entry in entries})}}
-    total = sum((entry.amount for entry in entries), Decimal('0'))
-    # Los créditos se imputan primero al saldo vencido; se conserva el saldo neto total.
-    overdue_charges = sum((e.amount for e in entries if e.amount > 0 and e.due_date and e.due_date < today()), Decimal('0'))
-    credits = -sum((e.amount for e in entries if e.amount < 0), Decimal('0'))
-    overdue = max(Decimal('0'), min(total, overdue_charges - credits))
-    return {'balance': str(total), 'overdue_balance': str(overdue),
-            'payment_status': 'Vencido' if overdue > 0 else 'Pendiente' if total > 0 else 'A favor' if total < 0 else 'Pagado'}
 
 
 def delivery_status(db, case_id, production_id=None):
@@ -166,36 +141,6 @@ def ready_order_predicate():
         Production.stage == 'READY', Production.classification_required.is_(False),
         Production.blocked_since.is_(None), has_item, not_(complete),
     )
-
-
-def financial_expressions():
-    amount = Ledger.amount
-    raw_total = func.coalesce(select(func.sum(amount)).where(Ledger.case_id == Case.id).correlate(Case).scalar_subquery(), 0)
-    production_currency_count = select(func.count(func.distinct(Production.currency))).where(Production.case_id == Case.id).correlate(Case).scalar_subquery()
-    ledger_currency_count = select(func.count(func.distinct(Ledger.currency))).where(Ledger.case_id == Case.id).correlate(Case).scalar_subquery()
-    one_currency = and_(production_currency_count <= 1, ledger_currency_count <= 1)
-    total = sql_case((one_currency, raw_total), else_=None)
-    overdue_charges = func.coalesce(select(func.sum(sql_case((and_(amount > 0, Ledger.due_date < today()), amount), else_=0))).where(Ledger.case_id == Case.id).correlate(Case).scalar_subquery(), 0)
-    cancellation_review = select(Production.case_id).where(Production.case_id == Case.id, Production.cancelled_at.is_not(None), Production.cancellation_review_pending.is_(True)).correlate(Case).exists()
-    has_debt, has_credit, has_overdue = financial_status_predicates()
-    calculated_overdue = sql_case((has_overdue, overdue_charges), else_=0)
-    overdue = sql_case((cancellation_review, 0), (one_currency, calculated_overdue), else_=None)
-    payment = sql_case((cancellation_review, 'Revisión de anulación'), (has_overdue, 'Vencido'), (has_debt, 'Pendiente'), (has_credit, 'A favor'), else_='Pagado')
-    return total, overdue, payment, has_debt, has_credit, has_overdue
-
-
-def financial_status_predicates():
-    current = select(func.coalesce(func.sum(Ledger.amount), 0)).where(
-        Ledger.production_id == Production.id, Ledger.currency == Production.currency).correlate(Production).scalar_subquery()
-    overdue_charges = select(func.coalesce(func.sum(sql_case((and_(Ledger.amount > 0, Ledger.due_date < today()), Ledger.amount), else_=0)), 0)).where(
-        Ledger.production_id == Production.id, Ledger.currency == Production.currency).correlate(Production).scalar_subquery()
-    credits = select(func.coalesce(func.sum(sql_case((Ledger.amount < 0, -Ledger.amount), else_=0)), 0)).where(
-        Ledger.production_id == Production.id, Ledger.currency == Production.currency).correlate(Production).scalar_subquery()
-    order_overdue = func.least(current, func.greatest(0, overdue_charges - credits))
-    debt = select(Production.id).where(Production.case_id == Case.id, current > 0).correlate(Case).exists()
-    credit = select(Production.id).where(Production.case_id == Case.id, current < 0).correlate(Case).exists()
-    overdue = select(Production.id).where(Production.case_id == Case.id, current > 0, order_overdue > 0).correlate(Case).exists()
-    return debt, credit, overdue
 
 
 # ---- Resúmenes y bandejas ----

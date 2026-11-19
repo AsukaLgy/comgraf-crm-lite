@@ -1,6 +1,6 @@
 # Guía de mantenimiento de Comgraf
 
-Para despliegue, respaldo y recuperación usa [Operación](OPERACION.md). Esta guía indica dónde cambiar cada comportamiento y qué invariantes debe conservar una intervención futura. Los nombres de campos históricos que ya no participan en el flujo activo están marcados en los modelos; no deben eliminarse sin migración y revisión de respaldos.
+Para despliegue, respaldo y recuperación usa [Operación](OPERACION.md). Esta guía indica dónde cambiar cada comportamiento y qué invariantes debe conservar una intervención futura. Los nombres de campos históricos que ya no participan en el flujo activo están marcados en los modelos; consulta además el [inventario de datos heredados](DATOS_HEREDADOS.md) antes de proponer una migración. No deben eliminarse sin medir referencias y revisar respaldos.
 
 ## Mapa del código
 
@@ -15,6 +15,7 @@ Para despliegue, respaldo y recuperación usa [Operación](OPERACION.md). Esta g
 | Tabla compartida | `frontend/src/CaseTable.jsx` | Presentación de casos en bandejas e historial de cliente. |
 | Alta y selección de cliente | `frontend/src/NewCase.jsx` | Nuevo caso, autocompletado y creación explícita de cliente/contacto. |
 | Coordinación del expediente | `frontend/src/CasePage.jsx` | Carga, mutaciones y composición del expediente. Mantenerlo como coordinador y no concentrar presentación de todos los dominios aquí. |
+| Diálogos del expediente | `frontend/src/CaseDialogs.jsx` | Modales de operación, entrega, cotización, adjuntos, cierre y eliminación. |
 | Atención y encabezado | `frontend/src/CaseAttention.jsx` | Abrir/cerrar atención, propietario e información de acción pendiente. |
 | Actividad | `frontend/src/CaseActivity.jsx` | Bitácora, notas e historial de comunicaciones en solo lectura. Las notas no abren atención. |
 | Etapas | `frontend/src/ProductionStages.jsx` | Barra de cinco etapas, clasificación histórica, programación, bloqueos y retrocesos. |
@@ -27,8 +28,8 @@ Para despliegue, respaldo y recuperación usa [Operación](OPERACION.md). Esta g
 | Endpoints | `backend/app/routers/` | HTTP, permisos de entrada, dependencias de sesión y traducción a servicios. |
 | Respuesta del expediente | `backend/app/routers/common.py` | Proyección común posterior a una mutación; evita que un router importe otro. |
 | Contratos | `backend/app/schemas.py` | Validación Pydantic. Rechaza campos extra y normaliza entradas. |
-| Reglas de negocio | `backend/app/services.py` | Transiciones, permisos de dominio, idempotencia, concurrencia y bitácora. |
-| Consultas y proyecciones | `backend/app/repository.py` | Visibilidad, saldos, estados derivados, serialización y bandejas. |
+| Reglas de negocio | `backend/app/services.py`, `service_events.py` | Transiciones, permisos de dominio, idempotencia, concurrencia y eventos/ciclo de vida. |
+| Consultas y proyecciones | `backend/app/repository.py`, `repository_finance.py` | Visibilidad, saldos, estados derivados, serialización y bandejas. |
 | Versión | `backend/app/version.py`, `Dockerfile` | Versión fija de producto y contrato; commit/fecha inyectados en la imagen. |
 | Persistencia | `backend/app/models.py` | Tablas, claves, índices y campos heredados. Cambios de esquema requieren Alembic. |
 | Roles y autenticación | `backend/app/security.py`, `backend/app/routers/auth.py` | Hash de contraseñas, sesión HTTP y autorización de servidor. |
@@ -80,7 +81,7 @@ Para despliegue, respaldo y recuperación usa [Operación](OPERACION.md). Esta g
 
 ## Estilo y herramientas
 
-Desde la raíz: `npm.cmd --prefix frontend ci --ignore-scripts`, `lint`, `format:check`, `test:unit` y `build`. Usa Node 24.11.1 (`frontend/.node-version`); `package.json#engines` acepta la serie 24, coherente con Docker. Evita la instalación global de Node 18 para estas comprobaciones. `format` y `format:check` comparten alcance sobre código JS/JSX/MJS de `src`, `e2e` y `tests`; no mantienen listas manuales distintas. En backend: `..\.venv\Scripts\python.exe -m ruff check app tests`, Alembic y pytest. La configuración está en `frontend/eslint.config.js`, `.prettierrc.json` y `backend/pyproject.toml`; la lista de paquetes de desarrollo vive en `backend/requirements-dev.txt`.
+Desde la raíz: `npm.cmd --prefix frontend ci --ignore-scripts`, `lint`, `format:check`, `test:unit` y `build`. Usa Node 24.11.1 (`frontend/.node-version`); `package.json#engines` acepta la serie 24, coherente con Docker. Evita la instalación global de Node 18 para estas comprobaciones. `format` y `format:check` comparten alcance sobre código JS/JSX/MJS de `src`, `e2e` y `tests`; no mantienen listas manuales distintas. En backend: `..\.venv\Scripts\python.exe -m ruff check app tests`, Alembic y pytest. La configuración está en `frontend/eslint.config.js`, `.prettierrc.json` y `backend/pyproject.toml`; las declaraciones de desarrollo viven en `backend/requirements-dev.txt`, bloqueadas en `backend/requirements-dev.lock.txt`.
 
 `ProductForm.newItem` y `changeItemProduct` son la fuente de valores iniciales para Producción, OP dentro de una solicitud y cotizaciones. La marca de cantidad predeterminada solo vive en el editor y se retira en `cleanItems`; una cantidad introducida o cargada se conserva. Al entrar a la familia de talonarios desde una fila nueva se propone 1, y el servidor mantiene la validación de entero positivo. `backend/app/cai.py` define `CATALOG_REVISION`; `/api/version` la expone para detectar un servidor local antiguo antes de enviar productos nuevos. Reinicia el proceso Python después de actualizar el código; un proceso ya iniciado conserva módulos anteriores aunque la interfaz sirva archivos recién compilados.
 

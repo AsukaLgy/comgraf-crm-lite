@@ -1,16 +1,12 @@
 """Integration tests exclusively against a disposable real MySQL schema."""
-import os
 import secrets
 import subprocess
 import sys
-from pathlib import Path
 import pytest
 
-os.environ['MYSQL_DATABASE'] = os.environ.get('TEST_MYSQL_DATABASE', 'comgraf_test')
-os.environ['UPLOAD_DIR'] = os.environ.get('TEST_UPLOAD_DIR', str(Path('../.runtime/test-uploads').resolve()))
-from app.config import settings
-if not settings.mysql_database.endswith('_test'):
-    raise RuntimeError('Las pruebas requieren una base terminada en _test')
+from app.test_database import configure_test_database, verify_test_database_identity
+
+TEST_DATABASE = configure_test_database()
 from app.db import SessionLocal, engine, Base
 from app.models import User
 from app.security import passwords
@@ -21,12 +17,14 @@ from sqlalchemy import text
 
 @pytest.fixture(scope='session', autouse=True)
 def migrate():
+    identity = verify_test_database_identity(engine, TEST_DATABASE)
+    print(f'Base de pruebas verificada: {identity}')
     subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], check=True)
-    assert engine.dialect.name == 'mysql'
 
 
 @pytest.fixture()
 def accounts(migrate):
+    verify_test_database_identity(engine, TEST_DATABASE)
     # Only test data, preserving role definitions and migration version.
     with engine.begin() as conn:
         conn.execute(text('UPDATE ledger SET reverses_id = NULL WHERE reverses_id IS NOT NULL'))

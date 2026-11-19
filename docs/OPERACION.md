@@ -6,10 +6,10 @@ Esta es la guía vigente para desarrollo, actualización y recuperación. El ser
 
 | Ruta | Responsabilidad |
 | --- | --- |
-| `frontend/src/` | React; `App.jsx` enruta y controla la navegación, `domain.js` mantiene etiquetas y opciones, `api.js` concentra contrato HTTP, fechas y moneda. `CasePage.jsx` coordina el detalle; `CasePrintSheet.jsx` y `PrintDocument.jsx` comparten la ficha y aíslan la impresión. |
+| `frontend/src/` | React; `App.jsx` enruta y controla la navegación, `domain.js` mantiene etiquetas y opciones, `api.js` concentra contrato HTTP, fechas y moneda. `CasePage.jsx` coordina el detalle y `CaseDialogs.jsx` reúne sus modales; `CasePrintSheet.jsx` y `PrintDocument.jsx` comparten la ficha y aíslan la impresión. |
 | `backend/app/routers/` | Endpoints FastAPI, autenticación y permisos de entrada. |
-| `backend/app/services.py`, `deletion.py` | Reglas de negocio, transacciones, concurrencia, eventos y eliminación definitiva. |
-| `backend/app/repository.py`, `models.py`, `schemas.py` | Consultas y proyecciones, tablas SQLAlchemy, validación Pydantic. |
+| `backend/app/services.py`, `service_events.py`, `deletion.py` | Coordinación de reglas, eventos y ciclo de vida, y eliminación definitiva. |
+| `backend/app/repository.py`, `repository_finance.py`, `models.py`, `schemas.py` | Consultas, proyecciones financieras, tablas SQLAlchemy y validación Pydantic. |
 | `backend/migrations/versions/` | Revisiones Alembic incrementales; las aplicadas no se editan ni borran. |
 | `backend/tests/`, `frontend/e2e/` | Pruebas MySQL con datos ficticios y recorridos de navegador. |
 | `scripts/`, `docker/` | Arranque, respaldo, diagnóstico y perfil de contenedores. |
@@ -51,8 +51,7 @@ Requisitos: Python 3.14, Node 24.11.1 (declarado en `frontend/.node-version`; Do
 
    ```sh
    python3.14 -m venv .venv
-   .venv/bin/python -m pip install -r backend/requirements.lock.txt
-   .venv/bin/python -m pip install -r backend/requirements-dev.txt
+   .venv/bin/python -m pip install -r backend/requirements-dev.lock.txt
    npm --prefix frontend ci --ignore-scripts
    ```
 
@@ -70,7 +69,9 @@ npm run lint
 npm run build
 ```
 
-`conftest.py` rechaza bases sin sufijo `_test`; las pruebas borran **solo** registros de esa base. Los smoke tests de `frontend/e2e/*.mjs` usan respuestas ficticias y un servidor estático de `frontend/dist` en `127.0.0.1:4173`. La suite Playwright completa requiere una instancia que apunte a una base `_test` y las credenciales ficticias generadas por `backend/tests/seed_e2e.py`; nunca se ejecuta contra producción. `npm run format:check` aún detecta formato heredado en archivos existentes; no mezcles una reformateación masiva con cambios de negocio.
+`conftest.py` exige `TEST_MYSQL_DATABASE` explícita, con sufijo `_test`, y distinta de `MYSQL_DATABASE` en desarrollo. Antes de Alembic o de limpiar tablas consulta `DATABASE()`, el host y el puerto reales de MySQL; si no coinciden con el destino configurado, se detiene. El único caso que permite igualar ambos nombres es `LOW_RESOURCE_TEST_MODE=1`, emitido por `prepare-low-resource.py --test-mode` para un perfil con datos bajo `.runtime/lan-light-test-data`; el wrapper verifica esos directorios antes de iniciar Compose. El perfil operativo deja el destino de pruebas vacío, por lo que ejecutar pytest dentro de él falla de forma segura. Los smoke tests de `frontend/e2e/*.mjs` usan respuestas ficticias y un servidor estático de `frontend/dist` en `127.0.0.1:4173`. La suite Playwright completa requiere una instancia aislada y las credenciales ficticias generadas por `backend/tests/seed_e2e.py`; nunca se ejecuta contra producción. `npm run format:check` aún detecta formato heredado en archivos existentes; no mezcles una reformateación masiva con cambios de negocio.
+
+`backend/requirements.lock.txt` contiene solo dependencias del servicio. `backend/requirements-dev.lock.txt` instala el conjunto de desarrollo y pruebas. En Compose, el destino `app` es el predeterminado de producción; `prepare-low-resource.py --test-mode` y el wrapper seleccionan el destino `test` con una etiqueta de imagen separada. La imagen operativa normal no incluye pytest, httpx ni Ruff.
 
 ## Actualizar `/opt/comgraf-beta/lite`
 

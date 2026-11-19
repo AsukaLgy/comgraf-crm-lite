@@ -42,7 +42,7 @@ export default function DeliveryFinance({
                         step: '0.01',
                         required: true,
                       },
-                      { name: 'reference', label: 'Referencia / comprobante', required: true },
+                      { name: 'invoice_number', label: 'Número de factura', required: true, maxLength: 120 },
                     ],
                     { kind: 'Abono' },
                   )
