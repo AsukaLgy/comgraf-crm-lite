@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, date, formatDateTime, localDate, dayKey } from './api'
 import { Panel, Loading, ErrorBox, Badge, Empty, Field, Select } from './components'
+import { promisedOrdersChartAxis } from './calendar-chart'
 
 export function Calendar() {
   const location = useLocation(),
@@ -51,10 +52,9 @@ export function Calendar() {
     date: '',
     orders: 0,
   })
-  const chartMax = Math.max(1, ...promisedDays.map((day) => day.orders))
-  const chartStep = Math.max(1, Math.ceil(chartMax / 4))
-  const chartAxisMax = Math.ceil(chartMax / chartStep) * chartStep
-  const chartTicks = Array.from({ length: chartAxisMax / chartStep + 1 }, (_, index) => index * chartStep)
+  const { max: chartAxisMax, ticks: chartTicks } = promisedOrdersChartAxis(
+    promisedDays.map((day) => day.orders),
+  )
   const chartWidth = 780
   const chartHeight = 230
   const plotLeft = 42
@@ -116,7 +116,7 @@ export function Calendar() {
                     <g key={tick}>
                       <line className="calendar-chart-grid" x1={plotLeft} x2={plotLeft + plotWidth} y1={y} y2={y} />
                       <text className="calendar-chart-y-label" x={plotLeft - 10} y={y + 4} textAnchor="end">
-                        {tick * chartStep}
+                        {tick}
                       </text>
                     </g>
                   )

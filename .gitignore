@@ -12,3 +12,9 @@ test-results/
 playwright-report/
 backups/
 backend/venv/
+graphify-out/cache/
+graphify-out/.graphify_labels.json
+graphify-out/.graphify_python
+graphify-out/.graphify_root
+graphify-out/cost.json
+graphify-out/manifest.json

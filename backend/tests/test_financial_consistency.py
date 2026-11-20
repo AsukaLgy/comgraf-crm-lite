@@ -140,3 +140,32 @@ def test_advance_due_partial_payment_and_reversal_match_financial_filters(client
     })
     assert refunded['balance'] == '0.00' and refunded['payment_status'] == 'Pagado'
     assert must(api.get('/api/cases?view=refunds'))['total'] == 0
+
+
+def test_debt_and_credit_remain_scoped_to_different_orders(clients):
+    api = clients['admin']
+    _, case = create(api, 'Deuda y crédito en OP distintas')
+    case = mutate(api, case, 'convert', conversion())
+    debt_order_id = case['production']['id']
+    credit_product = {
+        **conversion()['items'][0], 'product': 'Volantes', 'quantity': '50',
+    }
+    case = mutate(api, case, 'convert', {
+        **conversion(), 'items': [credit_product],
+    })
+    credit_order_id = case['production']['id']
+    credited = mutate(api, case, 'payments', {
+        'production_id': credit_order_id, 'amount': '600.00', 'reference': 'Exceso OP dos',
+    })
+
+    debt_order = must(api.get(f'/api/cases/{case["id"]}?production_id={debt_order_id}'))
+    credit_order = must(api.get(f'/api/cases/{case["id"]}?production_id={credit_order_id}'))
+    all_cases = must(api.get('/api/cases?view=all'))
+
+    assert debt_order['balance'] == '1000.00'
+    assert credit_order['balance'] == '-100.00'
+    assert credited['productions'][0]['balance'] == '1000.00'
+    assert credited['productions'][1]['balance'] == '-100.00'
+    assert all_cases['items'][0]['balance'] == '900.00'
+    assert must(api.get('/api/cases?view=balances'))['total'] == 1
+    assert must(api.get('/api/cases?view=refunds'))['total'] == 1

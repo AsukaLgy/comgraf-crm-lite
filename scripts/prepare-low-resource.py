@@ -81,6 +81,7 @@ def main():
         'APP_IMAGE': 'comgraf-app:lan-low-resource-test' if args.test_mode else 'comgraf-app:lan-low-resource',
         'MYSQL_DATABASE': 'comgraf_lan_test',
         'TEST_MYSQL_DATABASE': 'comgraf_lan_test' if args.test_mode else '',
+        'TEST_MYSQL_SERVER_UUID': '',
         'MYSQL_USER': 'comgraf_lan',
         'MYSQL_PASSWORD': secrets.token_hex(32),
         'MYSQL_ROOT_PASSWORD': secrets.token_hex(32),

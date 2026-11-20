@@ -37,12 +37,16 @@ APP_HOST=127.0.0.1 APP_WORKERS=1 ../.venv/bin/python -m app.start
 En otra terminal, desde la raíz, `npm --prefix frontend run dev`. Vite reenvía `/api` a la API local. Para crear la primera cuenta en una base vacía, detén la API y ejecuta desde `backend/`: `../.venv/bin/python -m app.cli create-admin`. El comando pide la contraseña sin mostrarla.
 
 Para pruebas locales, configura `TEST_MYSQL_DATABASE` con un esquema MySQL dedicado
-terminado en `_test`, distinto de `MYSQL_DATABASE`. El fixture confirma la identidad
-real de MySQL antes de migrar o limpiar datos; no usa un destino predeterminado:
+terminado en `_test`, distinto de `MYSQL_DATABASE`, y `TEST_MYSQL_SERVER_UUID` con el
+UUID del servidor desechable. Obtén el UUID directamente de ese MySQL mediante
+`SELECT @@server_uuid`; el fixture compara base, host/puerto y UUID antes de migrar o
+limpiar datos. Nunca uses el UUID del servicio operativo:
 
 ```sh
 cd backend
-TEST_MYSQL_DATABASE=comgraf_delete_test ../.venv/bin/python -m pytest -q
+export TEST_MYSQL_DATABASE=comgraf_delete_test
+export TEST_MYSQL_SERVER_UUID='uuid-copiado-del-mysql-desechable'
+../.venv/bin/python -m pytest -q
 ../.venv/bin/python -m ruff check app tests ../scripts
 cd ../frontend
 npm run lint

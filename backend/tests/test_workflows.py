@@ -141,6 +141,48 @@ def test_calendar_distinguishes_schedules_debt_and_independent_attention(clients
     assert not any(event['type'] in ('Seguimiento de cobro', 'Vencimiento de pago') for event in events)
 
 
+def test_promised_orders_counts_active_orders_in_date_window_once(clients, accounts):
+    api = clients['admin']
+    promised = today() + timedelta(days=5)
+    _, case = create(api, 'Conteo de OP prometidas')
+    case = mutate(api, case, 'take')
+    products = [item(), {**item(), 'product': 'Volantes', 'quantity': '50'}]
+    case = mutate(api, case, 'convert', {
+        **conversion(), 'committed_date': str(promised), 'items': products,
+    })
+    active_orders = case['productions']
+    assert len(active_orders) == 2
+
+    case = mutate(api, case, 'convert', {
+        **conversion(), 'committed_date': str(promised),
+    })
+    cancelled_id = case['production']['id']
+    case = mutate(api, case, 'production/cancel', {
+        'production_id': cancelled_id, 'reason': 'Prueba de exclusión',
+        'treatment': 'SIN_CARGO',
+    })
+
+    case = mutate(api, case, 'convert', {
+        **conversion(), 'committed_date': str(promised),
+    })
+    item_row = case['items'][0]
+    with SessionLocal.begin() as db:
+        db.add(Delivery(
+            case_id=case['id'], item_id=item_row['id'], quantity=Decimal(item_row['quantity']),
+            delivered_at=datetime.now(timezone.utc).replace(tzinfo=None), receiver='Cliente',
+            method='Entrega (delivery)', evidence='Prueba de calendario', actor_id=accounts['admin']['id'],
+        ))
+
+    case = mutate(api, case, 'convert', {
+        **conversion(), 'committed_date': str(promised + timedelta(days=1)),
+    })
+    start, end = str(promised), str(promised)
+    result = must(api.get('/api/calendar/promised-orders', params={'from': start, 'through': end}))
+
+    assert result['from'] == result['through'] == start
+    assert result['days'] == [{'date': start, 'orders': 2}]
+
+
 def test_password_policy_and_service_generation_sessions(clients, accounts, monkeypatch):
     from datetime import timedelta
     import app.security as security
